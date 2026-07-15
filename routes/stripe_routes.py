@@ -91,7 +91,6 @@ async def create_checkout_session(
     except stripe.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
@@ -107,13 +106,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
-    data_object = event["data"]["object"]
+    # ⬇️ Yeh line add karo — Stripe object ko dict mein convert karo
+    data_object = dict(event["data"]["object"])
 
     print(f"✅ Stripe event received: {event_type}")
 
     try:
         if event_type == "checkout.session.completed":
-            metadata = data_object.get("metadata", {})
+            metadata = dict(data_object.get("metadata") or {})
             user_id = int(metadata.get("user_id", 0))
             plan = metadata.get("plan", "free")
             customer_id = data_object.get("customer")
@@ -154,13 +154,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         elif event_type == "customer.subscription.updated":
             subscription_id = data_object.get("id")
             status = data_object.get("status")
-            metadata = data_object.get("metadata", {})
+            metadata = dict(data_object.get("metadata") or {})
             plan = metadata.get("plan", "free")
-
             period_end_ts = data_object.get("current_period_end")
             period_end = datetime.fromtimestamp(period_end_ts) if period_end_ts else None
-
-            print(f"✅ Subscription updated: {subscription_id}, status={status}")
 
             sub = db.query(models.Subscription).filter(
                 models.Subscription.stripe_subscription_id == subscription_id
@@ -177,13 +174,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     ).first()
                     if user:
                         user.plan = plan
-                        db.commit()
                 db.commit()
 
         elif event_type == "customer.subscription.deleted":
             subscription_id = data_object.get("id")
-
-            print(f"✅ Subscription deleted: {subscription_id}")
 
             sub = db.query(models.Subscription).filter(
                 models.Subscription.stripe_subscription_id == subscription_id
@@ -197,52 +191,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 ).first()
                 if user:
                     user.plan = "free"
-                    db.commit()
                 db.commit()
 
     except Exception as e:
         print(f"Webhook processing error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"received": True}
-
-
-@router.get("/subscription")
-def get_subscription(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    sub = db.query(models.Subscription).filter(
-        models.Subscription.user_id == current_user.id
-    ).first()
-
-    return {
-        "plan":                   current_user.plan,
-        "stripe_subscription_id": sub.stripe_subscription_id if sub else None,
-        "status":                 sub.status if sub else "free",
-        "current_period_end":     sub.current_period_end if sub else None,
-    }
-
-
-@router.post("/cancel")
-async def cancel_subscription(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    sub = db.query(models.Subscription).filter(
-        models.Subscription.user_id == current_user.id
-    ).first()
-
-    if not sub or not sub.stripe_subscription_id:
-        raise HTTPException(status_code=404, detail="No active subscription")
-
-    try:
-        stripe.Subscription.modify(
-            sub.stripe_subscription_id,
-            cancel_at_period_end=True
-        )
-        sub.status = "canceling"
-        db.commit()
-        return {"message": "Subscription will cancel at period end"}
-    except stripe.StripeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
