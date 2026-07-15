@@ -1,0 +1,77 @@
+from database import SessionLocal, engine
+import models
+
+models.Base.metadata.create_all(bind=engine)
+
+S3_BASE = "https://voicecontrol-audio.s3.amazonaws.com"
+
+exercises = [
+    {"category": "pause_control", "title": "The Power Pause", "instruction": "Before delivering your most important point, pause for 2 full seconds.", "wrong_audio_url": f"{S3_BASE}/pause_01_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_01_correct.mp3", "practice_template": "The most important thing I want you to remember is..."},
+    {"category": "pause_control", "title": "Pause Before Numbers", "instruction": "Whenever you say a number or statistic, pause before AND after it.", "wrong_audio_url": f"{S3_BASE}/pause_02_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_02_correct.mp3", "practice_template": "We increased revenue by... 40 percent... in just 90 days."},
+    {"category": "pause_control", "title": "The Breath Pause", "instruction": "Use your natural breath points as pauses. Breathe through your nose, pause visibly, then continue.", "wrong_audio_url": f"{S3_BASE}/pause_03_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_03_correct.mp3", "practice_template": "This decision will affect everyone on this team... and I want to be clear about why."},
+    {"category": "pause_control", "title": "Pause After Questions", "instruction": "When you ask a rhetorical question, pause for 3 seconds after it.", "wrong_audio_url": f"{S3_BASE}/pause_04_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_04_correct.mp3", "practice_template": "What would it mean for your career if you mastered this skill?..."},
+    {"category": "pause_control", "title": "The Transition Pause", "instruction": "Pause for 1.5 seconds every time you move from one idea to the next.", "wrong_audio_url": f"{S3_BASE}/pause_05_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_05_correct.mp3", "practice_template": "First, let me explain the problem... Now, here is the solution."},
+    {"category": "pause_control", "title": "Silence Is Strength", "instruction": "Replace every um or uh with a pause. Silence sounds confident.", "wrong_audio_url": f"{S3_BASE}/pause_06_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_06_correct.mp3", "practice_template": "The reason I believe this will work is..."},
+    {"category": "pause_control", "title": "Three-Point Pause", "instruction": "When listing three things, pause between each one.", "wrong_audio_url": f"{S3_BASE}/pause_07_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_07_correct.mp3", "practice_template": "You need three things to succeed: clarity... commitment... and courage."},
+    {"category": "pause_control", "title": "The Dramatic Pause", "instruction": "Before revealing the conclusion of your message, pause for 2-3 seconds.", "wrong_audio_url": f"{S3_BASE}/pause_08_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_08_correct.mp3", "practice_template": "After six months of hard work, the results were..."},
+    {"category": "pause_control", "title": "Slow Your Opening", "instruction": "Speak your opening sentence, then pause completely for 2 seconds before continuing.", "wrong_audio_url": f"{S3_BASE}/pause_09_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_09_correct.mp3", "practice_template": "Good morning. My name is [your name]... and today I want to talk about something that matters."},
+    {"category": "pause_control", "title": "End With Silence", "instruction": "After your final sentence, pause for 2 seconds, let your words land, then close.", "wrong_audio_url": f"{S3_BASE}/pause_10_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pause_10_correct.mp3", "practice_template": "And that is why I believe this is the right decision for all of us."},
+    {"category": "strong_endings", "title": "Drop Your Pitch", "instruction": "Practice ending every statement with a downward pitch. Down = authority. Up = uncertainty.", "wrong_audio_url": f"{S3_BASE}/strong_ending_01_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_01_correct.mp3", "practice_template": "This is the direction we are moving in."},
+    {"category": "strong_endings", "title": "The Declaration Exercise", "instruction": "Say each sentence as if you are declaring a fact that cannot be questioned.", "wrong_audio_url": f"{S3_BASE}/strong_ending_02_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_02_correct.mp3", "practice_template": "I am confident this is the right approach."},
+    {"category": "strong_endings", "title": "Never Question Your Statements", "instruction": "Record 5 statements. If any end going up, re-record until they all end going down.", "wrong_audio_url": f"{S3_BASE}/strong_ending_03_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_03_correct.mp3", "practice_template": "We have done the research and the data supports this."},
+    {"category": "strong_endings", "title": "Slow The Last Word", "instruction": "Slightly slow down on the last word of each sentence.", "wrong_audio_url": f"{S3_BASE}/strong_ending_04_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_04_correct.mp3", "practice_template": "The answer is absolutely clear."},
+    {"category": "strong_endings", "title": "Full Stop Practice", "instruction": "After your last word, stop completely. No um, no so, no trailing off.", "wrong_audio_url": f"{S3_BASE}/strong_ending_05_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_05_correct.mp3", "practice_template": "This is my final recommendation."},
+    {"category": "strong_endings", "title": "The Leader's Statement", "instruction": "Change I think we could maybe try to We will do this.", "wrong_audio_url": f"{S3_BASE}/strong_ending_06_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_06_correct.mp3", "practice_template": "We will launch this by the end of the month."},
+    {"category": "strong_endings", "title": "Anchor Your Closing Word", "instruction": "Rearrange sentences so the key word comes last, then drop your pitch on it.", "wrong_audio_url": f"{S3_BASE}/strong_ending_07_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_07_correct.mp3", "practice_template": "What matters most in this situation is trust."},
+    {"category": "strong_endings", "title": "The Conviction Read", "instruction": "Read a paragraph three times: normal, emphasizing last words, then slow with downward endings.", "wrong_audio_url": f"{S3_BASE}/strong_ending_08_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_08_correct.mp3", "practice_template": "Our team worked hard. We delivered results. The client is satisfied."},
+    {"category": "strong_endings", "title": "No Trailing Off", "instruction": "Keep your volume steady or slightly increasing through to the last syllable.", "wrong_audio_url": f"{S3_BASE}/strong_ending_09_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_09_correct.mp3", "practice_template": "Every person in this room has the ability to lead."},
+    {"category": "strong_endings", "title": "The Two-Sentence Drill", "instruction": "Say two sentences back to back. Make the first end strong. Pause. Make the second end even stronger.", "wrong_audio_url": f"{S3_BASE}/strong_ending_10_wrong.mp3", "correct_audio_url": f"{S3_BASE}/strong_ending_10_correct.mp3", "practice_template": "We know the problem. Now we will solve it."},
+    {"category": "pitch_movement", "title": "High-Low Contrast", "instruction": "Say the first half at slightly higher pitch, drop to lower pitch for the second half.", "wrong_audio_url": f"{S3_BASE}/pitch_01_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_01_correct.mp3", "practice_template": "The challenge we face is significant... but the opportunity is even greater."},
+    {"category": "pitch_movement", "title": "Emphasize Key Words", "instruction": "In every sentence, identify the ONE most important word. Raise your pitch slightly on that word only.", "wrong_audio_url": f"{S3_BASE}/pitch_02_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_02_correct.mp3", "practice_template": "This is the MOST important decision we will make this year."},
+    {"category": "pitch_movement", "title": "The Storyteller's Rise", "instruction": "Let your pitch gradually rise with each sentence, then drop sharply on your conclusion.", "wrong_audio_url": f"{S3_BASE}/pitch_03_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_03_correct.mp3", "practice_template": "It started small. Then it grew. Then it changed everything."},
+    {"category": "pitch_movement", "title": "Pitch On Positive Words", "instruction": "Every time you say a positive word, let your pitch rise naturally. For serious words, drop it.", "wrong_audio_url": f"{S3_BASE}/pitch_04_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_04_correct.mp3", "practice_template": "The RESULTS exceeded expectations and the GROWTH was remarkable."},
+    {"category": "pitch_movement", "title": "Avoid The Robot", "instruction": "Read a paragraph again, deliberately varying your pitch every 2-3 words.", "wrong_audio_url": f"{S3_BASE}/pitch_05_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_05_correct.mp3", "practice_template": "I have been working in this industry for ten years and learned that communication is key."},
+    {"category": "pitch_movement", "title": "The Question-Answer Arc", "instruction": "When asking a rhetorical question, let pitch rise. When answering, bring it back down.", "wrong_audio_url": f"{S3_BASE}/pitch_06_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_06_correct.mp3", "practice_template": "What is the solution?... The solution is simpler than you think."},
+    {"category": "pitch_movement", "title": "Sing Your Sentence", "instruction": "Literally sing one sentence, exaggerate pitch changes. Then say it normally.", "wrong_audio_url": f"{S3_BASE}/pitch_07_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_07_correct.mp3", "practice_template": "I am excited to share this news with all of you today."},
+    {"category": "pitch_movement", "title": "Three Level Drill", "instruction": "Say the same sentence at three pitch levels: high, medium, and low.", "wrong_audio_url": f"{S3_BASE}/pitch_08_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_08_correct.mp3", "practice_template": "We need to talk about what happened."},
+    {"category": "pitch_movement", "title": "Descending List", "instruction": "When listing items building in importance, let pitch ascend. For decreasing, let it descend.", "wrong_audio_url": f"{S3_BASE}/pitch_09_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_09_correct.mp3", "practice_template": "We need focus... dedication... and above all, courage."},
+    {"category": "pitch_movement", "title": "The Warmth Pitch", "instruction": "Practice speaking as if you genuinely care about every word.", "wrong_audio_url": f"{S3_BASE}/pitch_10_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pitch_10_correct.mp3", "practice_template": "I want you to know that your work truly makes a difference."},
+    {"category": "pace_control", "title": "The 140 WPM Target", "instruction": "Record yourself for 60 seconds, count the words, divide by duration. Target 130-160 WPM.", "wrong_audio_url": f"{S3_BASE}/pace_01_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_01_correct.mp3", "practice_template": "I want to walk you through the key findings from our latest research."},
+    {"category": "pace_control", "title": "Slow Down For Emphasis", "instruction": "Say your most important sentence at 70% of your normal speed.", "wrong_audio_url": f"{S3_BASE}/pace_02_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_02_correct.mp3", "practice_template": "And the result... was beyond anything we expected."},
+    {"category": "pace_control", "title": "The Metronome Method", "instruction": "Use a metronome app set to 70 BPM. Try to speak one stressed syllable per beat.", "wrong_audio_url": f"{S3_BASE}/pace_03_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_03_correct.mp3", "practice_template": "Every word I say is intentional and deliberate."},
+    {"category": "pace_control", "title": "Fast-Slow Contrast", "instruction": "Speak faster during background information, then slow to 70% speed for your key point.", "wrong_audio_url": f"{S3_BASE}/pace_04_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_04_correct.mp3", "practice_template": "We analyzed the data, reviewed all options and the conclusion is this."},
+    {"category": "pace_control", "title": "Read Aloud Slowly", "instruction": "Read any article at 70% of your natural speed. Do this for 5 minutes every day.", "wrong_audio_url": f"{S3_BASE}/pace_05_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_05_correct.mp3", "practice_template": "Leadership is not about being in charge. It is about taking care of those in your charge."},
+    {"category": "pace_control", "title": "One Thought At A Time", "instruction": "Say one complete thought, pause, then say the next.", "wrong_audio_url": f"{S3_BASE}/pace_06_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_06_correct.mp3", "practice_template": "The first issue is timing. The second issue is resources. The third is communication."},
+    {"category": "pace_control", "title": "Breathe To Control Speed", "instruction": "Take a full breath after every 2-3 sentences.", "wrong_audio_url": f"{S3_BASE}/pace_07_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_07_correct.mp3", "practice_template": "I appreciate everyone being here today. We have a lot to cover. Let us get started."},
+    {"category": "pace_control", "title": "The Anchor Word Slow", "instruction": "Slow down on the most important word in each sentence.", "wrong_audio_url": f"{S3_BASE}/pace_08_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_08_correct.mp3", "practice_template": "What we need right now is clarity."},
+    {"category": "pace_control", "title": "Count To Three", "instruction": "At the end of every major point, silently count to three before starting your next sentence.", "wrong_audio_url": f"{S3_BASE}/pace_09_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_09_correct.mp3", "practice_template": "That is the core of our strategy. Now let me tell you how we execute it."},
+    {"category": "pace_control", "title": "Energy Without Speed", "instruction": "Practice with maximum vocal energy while keeping pace at 130 WPM.", "wrong_audio_url": f"{S3_BASE}/pace_10_wrong.mp3", "correct_audio_url": f"{S3_BASE}/pace_10_correct.mp3", "practice_template": "I am genuinely excited about what we are building together and I want you to feel that too."},
+]
+
+
+def seed():
+    db = SessionLocal()
+    try:
+        db.query(models.Exercise).delete()
+        db.commit()
+        for ex in exercises:
+            exercise = models.Exercise(
+                category=ex["category"],
+                title=ex["title"],
+                instruction=ex["instruction"],
+                wrong_audio_url=ex["wrong_audio_url"],
+                correct_audio_url=ex["correct_audio_url"],
+                practice_template=ex["practice_template"]
+            )
+            db.add(exercise)
+        db.commit()
+        print(f"✅ {len(exercises)} exercises seeded with S3 audio URLs.")
+    except Exception as e:
+        print(f"Seed error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    seed()
