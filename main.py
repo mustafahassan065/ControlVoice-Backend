@@ -6,6 +6,8 @@ import models
 from routes import auth_routes, audio_routes, exercise_routes, program_routes, email_routes,progress_routes,stripe_routes,report_routes
 from scheduler import start_scheduler
 import os
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -26,6 +28,15 @@ app.add_middleware(
 
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+class RawBodyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/stripe/webhook":
+            body = await request.body()
+            request.state.raw_body = body
+        return await call_next(request)
+
+app.add_middleware(RawBodyMiddleware)
 
 app.include_router(auth_routes.router)
 app.include_router(audio_routes.router)

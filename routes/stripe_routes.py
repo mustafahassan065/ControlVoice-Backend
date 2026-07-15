@@ -98,7 +98,6 @@ async def create_checkout_session(
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
@@ -113,22 +112,20 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # ─── checkout.session.completed ───
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = int(session["metadata"].get("user_id", 0))
-        plan    = session["metadata"].get("plan", "free")
-        customer_id    = session.get("customer")
+        plan = session["metadata"].get("plan", "free")
+        customer_id = session.get("customer")
         subscription_id = session.get("subscription")
 
         if user_id:
-            # Update user plan
             user = db.query(models.User).filter(models.User.id == user_id).first()
             if user:
                 user.plan = plan
                 db.commit()
+                print(f"✅ User {user_id} plan updated to {plan}")
 
-            # Update subscription record
             sub = db.query(models.Subscription).filter(
                 models.Subscription.user_id == user_id
             ).first()
@@ -136,7 +133,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             if sub:
                 sub.plan = plan
                 sub.status = "active"
-                sub.stripe_customer_id    = customer_id
+                sub.stripe_customer_id = customer_id
                 sub.stripe_subscription_id = subscription_id
                 db.commit()
             else:
@@ -150,15 +147,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 db.add(new_sub)
                 db.commit()
 
-            print(f"✅ Payment success: user {user_id} upgraded to {plan}")
-
-    # ─── customer.subscription.updated ───
     elif event["type"] == "customer.subscription.updated":
         stripe_sub = event["data"]["object"]
         subscription_id = stripe_sub["id"]
         status = stripe_sub["status"]
         plan_meta = stripe_sub.get("metadata", {}).get("plan", "free")
-
         period_end = datetime.fromtimestamp(stripe_sub["current_period_end"])
 
         sub = db.query(models.Subscription).filter(
@@ -170,13 +163,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             sub.current_period_end = period_end
             if status == "active":
                 sub.plan = plan_meta
-                user = db.query(models.User).filter(models.User.id == sub.user_id).first()
+                user = db.query(models.User).filter(
+                    models.User.id == sub.user_id
+                ).first()
                 if user:
                     user.plan = plan_meta
-            db.commit()
-            print(f"✅ Subscription updated: {subscription_id} — {status}")
+                    db.commit()
 
-    # ─── customer.subscription.deleted ───
     elif event["type"] == "customer.subscription.deleted":
         stripe_sub = event["data"]["object"]
         subscription_id = stripe_sub["id"]
@@ -188,14 +181,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if sub:
             sub.status = "canceled"
             sub.plan = "free"
-            user = db.query(models.User).filter(models.User.id == sub.user_id).first()
+            user = db.query(models.User).filter(
+                models.User.id == sub.user_id
+            ).first()
             if user:
                 user.plan = "free"
-            db.commit()
-            print(f"✅ Subscription canceled: {subscription_id}")
+                db.commit()
 
     return {"received": True}
-
 
 @router.get("/subscription")
 def get_subscription(

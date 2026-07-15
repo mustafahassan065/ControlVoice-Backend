@@ -7,6 +7,8 @@ from scoring_engine import calculate_scores
 from ai_feedback import generate_feedback
 import models
 import os, shutil, uuid, json
+import boto3
+from botocore.exceptions import ClientError
 from plan_guard import check_analysis_limit
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -19,6 +21,27 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+
+def upload_to_s3(filepath: str, filename: str) -> str:
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        region_name=os.getenv("AWS_REGION", "us-east-1")
+    )
+    bucket = os.getenv("AWS_BUCKET_NAME")
+    s3_key = f"recordings/{filename}"
+
+    s3_client.upload_file(
+        filepath,
+        bucket,
+        s3_key,
+        ExtraArgs={"ContentType": "audio/webm"}
+    )
+
+    url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{s3_key}"
+    return url
 
 
 def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
@@ -77,7 +100,7 @@ def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
         db.commit()
         db.refresh(report)
 
-        # Step 7 — Progress Snapshot save karo (document requirement)
+        # Step 7 — Progress Snapshot
         snapshot = models.ProgressSnapshot(
             user_id=recording.user_id,
             authority_score=scores["authority_score"],
@@ -93,6 +116,7 @@ def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
     except Exception as e:
         print(f"Analysis error: {e}")
 
+
 @router.post("/upload")
 async def upload_audio(
     background_tasks: BackgroundTasks,
@@ -101,7 +125,6 @@ async def upload_audio(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Plan limit check — Free user sirf 1
     check_analysis_limit(current_user, db)
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "webm"
@@ -111,9 +134,17 @@ async def upload_audio(
     with open(filepath, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
+    # S3 pe upload karo
+    try:
+        audio_url = upload_to_s3(filepath, filename)
+        print(f"✅ Uploaded to S3: {audio_url}")
+    except Exception as e:
+        print(f"S3 upload failed, using local: {e}")
+        audio_url = f"/uploads/{filename}"
+
     recording = models.Recording(
         user_id=current_user.id,
-        audio_url=f"/uploads/{filename}",
+        audio_url=audio_url,
         duration=duration
     )
     db.add(recording)
@@ -128,10 +159,10 @@ async def upload_audio(
     )
 
     return {
-        "id":        recording.id,
-        "user_id":   recording.user_id,
-        "audio_url": recording.audio_url,
-        "duration":  recording.duration,
+        "id":         recording.id,
+        "user_id":    recording.user_id,
+        "audio_url":  audio_url,
+        "duration":   recording.duration,
         "transcript": None,
         "created_at": recording.created_at
     }
@@ -153,9 +184,9 @@ def get_my_recordings(
         ).first()
 
         result.append({
-            "id": rec.id,
-            "audio_url": rec.audio_url,
-            "transcript": rec.transcript,
+            "id":           rec.id,
+            "audio_url":    rec.audio_url,
+            "transcript":   rec.transcript,
             "acoustic_data": json.loads(rec.acoustic_data) if rec.acoustic_data else None,
             "report": {
                 "id":               report.id,
@@ -169,8 +200,8 @@ def get_my_recordings(
                 "ending_score":     report.ending_score,
                 "feedback":         json.loads(report.feedback) if report.feedback else {},
             } if report else None,
-            "duration": rec.duration,
-            "created_at": rec.created_at
+            "duration":     rec.duration,
+            "created_at":   rec.created_at
         })
     return result
 
@@ -193,9 +224,9 @@ def get_recording(
     ).first()
 
     return {
-        "id": recording.id,
-        "audio_url": recording.audio_url,
-        "transcript": recording.transcript,
+        "id":           recording.id,
+        "audio_url":    recording.audio_url,
+        "transcript":   recording.transcript,
         "acoustic_data": json.loads(recording.acoustic_data) if recording.acoustic_data else None,
         "report": {
             "id":               report.id,
@@ -209,6 +240,6 @@ def get_recording(
             "ending_score":     report.ending_score,
             "feedback":         json.loads(report.feedback) if report.feedback else {},
         } if report else None,
-        "duration": recording.duration,
-        "created_at": recording.created_at
+        "duration":     recording.duration,
+        "created_at":   recording.created_at
     }
