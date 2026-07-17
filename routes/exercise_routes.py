@@ -34,7 +34,6 @@ def get_recommended(
     exercises = get_recommended_exercises(scores, db)
     return {"exercises": exercises, "report_id": report_id}
 
-
 @router.get("/all")
 def get_all_exercises(
     category: str = None,
@@ -45,7 +44,6 @@ def get_all_exercises(
     if category:
         query = query.filter(models.Exercise.category == category)
     exercises = query.all()
-
     return [
         {
             "id":                ex.id,

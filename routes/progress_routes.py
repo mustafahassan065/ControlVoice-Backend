@@ -139,6 +139,11 @@ def get_progress(
         "latest_presence":        round(latest_report.presence_score) if latest_report else 0,
         "latest_leadership":      round(latest_report.leadership_score) if latest_report else 0,
         "best_authority":         round(max(r.authority_score for r in reports)) if reports else 0,
+        # existing return mein yeh add karo:
+        "latest_pause":    round(latest_report.pause_score)   if latest_report else 0,
+        "latest_ending":   round(latest_report.ending_score)  if latest_report else 0,
+        "latest_pitch":    round(latest_report.pitch_score)   if latest_report else 0,
+        "latest_pace":     round(latest_report.pace_score)    if latest_report else 0,
         "user_level":             latest_feedback.get("user_level", "Beginner Speaker"),
         "target_score":           latest_feedback.get("target_score", 80),
         "progress_to_target":     latest_feedback.get("progress_to_target", 0),
