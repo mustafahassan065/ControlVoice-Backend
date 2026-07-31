@@ -117,3 +117,43 @@ class ProgressSnapshot(Base):
     presence_score = Column(Float, nullable=True)
     leadership_score = Column(Float, nullable=True)
     recording_date = Column(DateTime(timezone=True), server_default=func.now())
+
+class DailyChallenge(Base):
+    __tablename__ = "daily_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prompt = Column(Text, nullable=False)
+    date = Column(String, nullable=False)  # YYYY-MM-DD
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserDailyChallenge(Base):
+    __tablename__ = "user_daily_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    challenge_id = Column(Integer, ForeignKey("daily_challenges.id"), nullable=False)
+    recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
+    completed = Column(Integer, default=0)  # 0 = not done, 1 = done
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserXP(Base):
+    __tablename__ = "user_xp"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    total_xp = Column(Integer, default=0)
+    current_level = Column(Integer, default=1)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StreakLog(Base):
+    __tablename__ = "streak_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    activity_date = Column(String, nullable=False)  # YYYY-MM-DD
+    activity_type = Column(String, nullable=False)  # challenge, exercise, assessment
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

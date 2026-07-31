@@ -8,21 +8,27 @@ from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
-
 @router.get("/chart/{user_id}")
 def get_progress_chart(
     user_id: int,
+    days: int = 30,  # 7, 30, or 0 for all time
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Document ke mutabiq — progress_snapshots se chart data"""
     if current_user.id != user_id:
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    snapshots = db.query(models.ProgressSnapshot).filter(
+    query = db.query(models.ProgressSnapshot).filter(
         models.ProgressSnapshot.user_id == user_id
-    ).order_by(models.ProgressSnapshot.recording_date.asc()).all()
+    )
+
+    if days > 0:
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        query = query.filter(models.ProgressSnapshot.recording_date >= cutoff)
+
+    snapshots = query.order_by(models.ProgressSnapshot.recording_date.asc()).all()
 
     chart_data = []
     for snap in snapshots:
@@ -34,7 +40,7 @@ def get_progress_chart(
             "leadership_score": round(snap.leadership_score or 0),
         })
 
-    return {"chart_data": chart_data}
+    return {"chart_data": chart_data, "days": days}
 
 
 @router.get("/{user_id}")
