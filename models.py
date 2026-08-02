@@ -157,3 +157,14 @@ class StreakLog(Base):
     activity_date = Column(String, nullable=False)  # YYYY-MM-DD
     activity_type = Column(String, nullable=False)  # challenge, exercise, assessment
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class PersonalBest(Base):
+    __tablename__ = "personal_bests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    metric = Column(String, nullable=False)  # authority, confidence, presence, leadership
+    previous_best = Column(Float, nullable=True)
+    new_best = Column(Float, nullable=False)
+    recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
+    achieved_at = Column(DateTime(timezone=True), server_default=func.now())

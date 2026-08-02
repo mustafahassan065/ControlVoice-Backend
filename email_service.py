@@ -125,40 +125,45 @@ def send_daily_exercise_email(user: models.User, exercise: models.Exercise, db: 
         print(f"Email error: {e}")
         return False
 
-
 def send_weekly_progress_email(user: models.User, report: models.Report, prev_report: models.Report, db: Session):
-    subject = "Your Voice Improved This Week 📈"
+    subject = "Your Weekly Voice Progress Report 📊"
 
     feedback = json.loads(report.feedback) if report.feedback else {}
     prev_auth = round(prev_report.authority_score) if prev_report else round(report.authority_score) - 5
+    improvement = round(report.authority_score) - prev_auth
+    improvement_text = f"+{improvement}" if improvement >= 0 else str(improvement)
+    improvement_color = "#4ADE80" if improvement >= 0 else "#F87171"
 
-    html = f"""
-<!DOCTYPE html>
+    # Personal bests this week
+    personal_bests = feedback.get("personal_bests", [])
+    pb_html = ""
+    if personal_bests:
+        pb_html = """<div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.08);">
+          <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 12px;">🏆 New Personal Bests This Week</p>"""
+        for pb in personal_bests:
+            pb_html += f"""<p style="font-size:14px;color:#4ADE80;margin:4px 0;">✅ {pb['metric'].title()} Score: {pb['new_score']}</p>"""
+        pb_html += "</div>"
+
+    html = f"""<!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#0A0E1A;font-family:'Inter',Arial,sans-serif;">
   <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
 
-    <!-- HEADER -->
     <div style="text-align:center;margin-bottom:32px;">
-      <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 8px;">VoiceControl AI</p>
-      <h1 style="font-family:Georgia,serif;font-size:28px;font-weight:700;color:#FFFFFF;margin:0;">Your Weekly Progress Report</h1>
+      <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 8px;">Voice Control AI</p>
+      <h1 style="font-family:Georgia,serif;font-size:28px;font-weight:700;color:#FFFFFF;margin:0;">Your Weekly Progress</h1>
     </div>
 
-    <!-- GREETING -->
     <div style="background:#111827;border-radius:12px;padding:24px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.08);">
       <p style="font-size:15px;color:rgba(255,255,255,0.7);line-height:1.7;margin:0;">
-        Hi <strong style="color:#FFFFFF;">{user.name.split()[0]}</strong>, here is how your voice authority changed this week.
+        Hi <strong style="color:#FFFFFF;">{user.name.split()[0]}</strong>, here is your voice authority progress this week.
       </p>
     </div>
 
-    <!-- AUTHORITY SCORE -->
     <div style="background:#111827;border-radius:12px;padding:24px;margin-bottom:16px;border:1px solid rgba(201,168,76,0.28);">
       <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 16px;">Authority Score</p>
-      <div style="display:flex;align-items:center;gap:16px;">
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
         <div style="text-align:center;">
           <p style="font-size:11px;color:rgba(255,255,255,0.4);margin:0 0 4px;">Last Week</p>
           <p style="font-family:Georgia,serif;font-size:36px;font-weight:700;color:rgba(255,255,255,0.5);margin:0;">{prev_auth}</p>
@@ -169,74 +174,62 @@ def send_weekly_progress_email(user: models.User, report: models.Report, prev_re
           <p style="font-family:Georgia,serif;font-size:36px;font-weight:700;color:#C9A84C;margin:0;">{round(report.authority_score)}</p>
         </div>
         <div style="margin-left:auto;text-align:center;">
-          <p style="font-family:Georgia,serif;font-size:28px;font-weight:700;color:#4ADE80;margin:0;">+{round(report.authority_score) - prev_auth}</p>
-          <p style="font-size:11px;color:#4ADE80;margin:4px 0 0;">improvement</p>
+          <p style="font-family:Georgia,serif;font-size:28px;font-weight:700;color:{improvement_color};margin:0;">{improvement_text}</p>
+          <p style="font-size:11px;color:{improvement_color};margin:4px 0 0;">this week</p>
         </div>
       </div>
     </div>
 
-    <!-- SCORE BREAKDOWN -->
+    {pb_html}
+
     <div style="background:#111827;border-radius:12px;padding:24px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.08);">
       <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.4);font-weight:600;margin:0 0 16px;">Score Breakdown</p>
       {_score_row("Confidence", round(report.confidence_score))}
-      {_score_row("Presence", round(report.presence_score))}
+      {_score_row("Presence",   round(report.presence_score))}
       {_score_row("Leadership", round(report.leadership_score))}
-      {_score_row("Pace Control", round(report.pace_score))}
-      {_score_row("Pause Control", round(report.pause_score))}
     </div>
 
-    <!-- LEVEL -->
     <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.28);border-radius:12px;padding:20px 24px;margin-bottom:24px;text-align:center;">
       <p style="font-size:11px;color:#C9A84C;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.15em;">Current Level</p>
       <p style="font-family:Georgia,serif;font-size:22px;font-weight:700;color:#E8C97A;margin:0;">{feedback.get('user_level', 'Developing Presence')}</p>
     </div>
 
-    <!-- CTA -->
     <div style="text-align:center;margin-bottom:32px;">
-      <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/record"
+      <a href="{os.getenv('FRONTEND_URL', 'https://voicecontrol.tech')}/record"
          style="display:inline-block;background:#C9A84C;color:#0A0E1A;padding:13px 32px;border-radius:8px;font-size:15px;font-weight:700;text-decoration:none;">
         Record This Week's Assessment
       </a>
     </div>
 
-    <!-- FOOTER -->
     <div style="text-align:center;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
       <p style="font-size:12px;color:rgba(255,255,255,0.3);margin:0;">
-        VoiceControl AI · Weekly Progress Report<br>
-        <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/dashboard" style="color:rgba(201,168,76,0.6);text-decoration:none;">View Dashboard</a>
+        Voice Control AI · Weekly Progress Report<br>
+        <a href="{os.getenv('FRONTEND_URL', 'https://voicecontrol.tech')}/dashboard" style="color:rgba(201,168,76,0.6);text-decoration:none;">View Dashboard</a>
       </p>
     </div>
-
   </div>
 </body>
-</html>
-"""
+</html>"""
 
     try:
         response = resend.Emails.send({
-            "from": FROM_EMAIL,
-            "to": user.email,
+            "from":    FROM_EMAIL,
+            "to":      user.email,
             "subject": subject,
-            "html": html,
+            "html":    html,
         })
-
         log = models.EmailLog(
-            user_id=user.id,
-            email_type="weekly_progress",
-            email_subject=subject,
-            status="sent",
+            user_id=user.id, email_type="weekly_progress",
+            email_subject=subject, status="sent",
             resend_id=response.get("id", ""),
         )
         db.add(log)
         db.commit()
         return True
-
     except Exception as e:
         log = models.EmailLog(
-            user_id=user.id,
-            email_type="weekly_progress",
-            email_subject=subject,
-            status="failed",
+            user_id=user.id, email_type="weekly_progress",
+            email_subject=subject, status="failed",
         )
         db.add(log)
         db.commit()

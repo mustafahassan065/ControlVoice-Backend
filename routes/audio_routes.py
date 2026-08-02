@@ -10,6 +10,8 @@ import os, shutil, uuid, json
 import boto3
 from botocore.exceptions import ClientError
 from plan_guard import check_analysis_limit
+from personal_bests import check_personal_bests
+from routes.challenge_routes import award_xp
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -43,14 +45,12 @@ def upload_to_s3(filepath: str, filename: str) -> str:
     url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{s3_key}"
     return url
 
-
 def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
     try:
         # Step 1 — Whisper
         with open(filepath, "rb") as audio_file:
             result = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
+                model="whisper-1", file=audio_file,
             )
         transcript = result.text
 
@@ -111,11 +111,50 @@ def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
         db.add(snapshot)
         db.commit()
 
-        print(f"✅ Report ID {report.id} + Snapshot saved — Authority: {scores['authority_score']}")
+        # Step 8 — Personal Bests check
+        new_bests = check_personal_bests(
+            recording.user_id, scores, recording_id, db
+        )
+
+        # Step 9 — XP for assessment (+25) + beat score (+10 each new best)
+        xp_earned = 25  # base assessment XP
+        xp_earned += len(new_bests) * 10  # +10 per new personal best
+        award_xp(recording.user_id, xp_earned, db)
+
+        # Step 10 — Log streak for assessment
+        from datetime import date
+        today = date.today().isoformat()
+        streak_log = db.query(models.StreakLog).filter(
+            models.StreakLog.user_id == recording.user_id,
+            models.StreakLog.activity_date == today,
+            models.StreakLog.activity_type == "assessment"
+        ).first()
+        if not streak_log:
+            db.add(models.StreakLog(
+                user_id=recording.user_id,
+                activity_date=today,
+                activity_type="assessment"
+            ))
+            db.commit()
+
+        # Save personal bests in report feedback
+        if new_bests:
+            report_obj = db.query(models.Report).filter(
+                models.Report.id == report.id
+            ).first()
+            if report_obj:
+                feedback_data = json.loads(report_obj.feedback)
+                feedback_data["personal_bests"] = new_bests
+                feedback_data["xp_earned"] = xp_earned
+                report_obj.feedback = json.dumps(feedback_data)
+                db.commit()
+
+        print(f"✅ Report ID {report.id} saved — Authority: {scores['authority_score']} — XP earned: {xp_earned}")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Analysis error: {e}")
-
 
 @router.post("/upload")
 async def upload_audio(
