@@ -113,3 +113,53 @@ def get_email_logs(
         }
         for log in logs
     ]
+@router.post("/send-missed-practice")
+def send_missed_practice(db: Session = Depends(get_db)):
+    """
+    Scheduler pe run karo — 3 din se koi activity nahi toh email bhejo
+    """
+    from datetime import datetime, timedelta
+    from email_service import send_missed_practice_email
+
+    three_days_ago = (datetime.utcnow() - timedelta(days=3)).date().isoformat()
+
+    users = db.query(models.User).all()
+    sent = 0
+
+    for user in users:
+        # Check last activity
+        last_activity = db.query(models.StreakLog).filter(
+            models.StreakLog.user_id == user.id
+        ).order_by(models.StreakLog.activity_date.desc()).first()
+
+        # If no activity in 3+ days and has at least 1 recording
+        has_recordings = db.query(models.Recording).filter(
+            models.Recording.user_id == user.id
+        ).count() > 0
+
+        if has_recordings:
+            if not last_activity or last_activity.activity_date <= three_days_ago:
+                days_missed = 3
+                if last_activity:
+                    from datetime import date
+                    last = date.fromisoformat(last_activity.activity_date)
+                    days_missed = (date.today() - last).days
+                send_missed_practice_email(user, days_missed, db)
+                sent += 1
+
+    return {"sent": sent}
+
+@router.post("/send-monthly")
+def send_monthly_reports(db: Session = Depends(get_db)):
+    """Run on 1st of every month"""
+    from email_service import send_monthly_report_email
+    users = db.query(models.User).all()
+    sent = 0
+    for user in users:
+        has_recordings = db.query(models.Recording).filter(
+            models.Recording.user_id == user.id
+        ).count() > 0
+        if has_recordings:
+            if send_monthly_report_email(user, db):
+                sent += 1
+    return {"sent": sent}

@@ -17,12 +17,12 @@ XP_REWARDS = {
 }
 
 LEVELS = [
-    (1,   "Speaker",              0),
-    (2,   "Clear Speaker",        100),
-    (3,   "Confident Speaker",    250),
-    (4,   "Professional Speaker", 500),
-    (5,   "Authoritative Speaker",850),
-    (6,   "Executive Voice",      1300),
+    (1, "Speaker",               0),
+    (2, "Clear Speaker",         100),
+    (3, "Confident Speaker",     250),
+    (4, "Professional Speaker",  500),
+    (5, "Authoritative Speaker", 850),
+    (6, "Executive Voice",       1300),
 ]
 
 
@@ -53,39 +53,55 @@ def get_week_dates():
     return [(monday + timedelta(days=i)).isoformat() for i in range(7)]
 
 
+def award_xp(user_id: int, amount: int, db: Session) -> int:
+    user_xp = db.query(models.UserXP).filter(
+        models.UserXP.user_id == user_id
+    ).first()
+
+    if user_xp:
+        user_xp.total_xp += amount
+        new_xp = user_xp.total_xp
+    else:
+        new_xp = amount
+        user_xp = models.UserXP(user_id=user_id, total_xp=amount)
+        db.add(user_xp)
+
+    level_info = get_level(new_xp)
+    user_xp.current_level = level_info["level"]
+    db.commit()
+    return amount
+
+
 @router.get("/today")
 def get_today_challenge(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     today = get_today_str()
-
-    # Get challenge for today — rotate by day of year
     day_of_year = date.today().timetuple().tm_yday
     all_challenges = db.query(models.DailyChallenge).all()
+
     if not all_challenges:
         raise HTTPException(status_code=404, detail="No challenges found")
 
     challenge = all_challenges[(day_of_year - 1) % len(all_challenges)]
 
-    # Check if user already completed today
     user_challenge = db.query(models.UserDailyChallenge).filter(
         models.UserDailyChallenge.user_id == current_user.id,
         models.UserDailyChallenge.challenge_id == challenge.id,
     ).first()
 
-    # Check if completed today specifically
     completed_today = False
     if user_challenge and user_challenge.completed_at:
         completed_today = user_challenge.completed_at.date().isoformat() == today
 
     return {
-        "id":             challenge.id,
-        "prompt":         challenge.prompt,
-        "date":           today,
-        "completed":      completed_today,
-        "xp_reward":      XP_REWARDS["challenge"],
-        "duration":       "30–60 seconds",
+        "id":         challenge.id,
+        "prompt":     challenge.prompt,
+        "date":       today,
+        "completed":  completed_today,
+        "xp_reward":  XP_REWARDS["challenge"],
+        "duration":   "30–60 seconds",
     }
 
 
@@ -103,7 +119,7 @@ def complete_challenge(
     if not challenge:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
-    # Check already completed today
+    # Already completed today check
     existing = db.query(models.UserDailyChallenge).filter(
         models.UserDailyChallenge.user_id == current_user.id,
         models.UserDailyChallenge.challenge_id == challenge_id,
@@ -125,43 +141,50 @@ def complete_challenge(
         )
         db.add(udc)
 
-    # Log streak
-    streak_log = db.query(models.StreakLog).filter(
+    # Log streak for today
+    streak_exists = db.query(models.StreakLog).filter(
         models.StreakLog.user_id == current_user.id,
         models.StreakLog.activity_date == today,
         models.StreakLog.activity_type == "challenge"
     ).first()
-    if not streak_log:
+    if not streak_exists:
         db.add(models.StreakLog(
             user_id=current_user.id,
             activity_date=today,
             activity_type="challenge"
         ))
+    db.commit()
 
-    # Award XP
+    # Award base XP for challenge
     xp_earned = award_xp(current_user.id, XP_REWARDS["challenge"], db)
+
+    # Check 3 consecutive days bonus
+    all_logs = db.query(models.StreakLog).filter(
+        models.StreakLog.user_id == current_user.id
+    ).all()
+    activity_dates = list({log.activity_date for log in all_logs})
+
+    last_3 = [(date.today() - timedelta(days=i)).isoformat() for i in range(3)]
+    all_3_present = all(d in activity_dates for d in last_3)
+
+    if all_3_present:
+        already_bonus = db.query(models.StreakLog).filter(
+            models.StreakLog.user_id == current_user.id,
+            models.StreakLog.activity_date == today,
+            models.StreakLog.activity_type == "three_day_bonus"
+        ).first()
+        if not already_bonus:
+            award_xp(current_user.id, XP_REWARDS["three_days"], db)
+            db.add(models.StreakLog(
+                user_id=current_user.id,
+                activity_date=today,
+                activity_type="three_day_bonus"
+            ))
+            db.commit()
+            xp_earned += XP_REWARDS["three_days"]
 
     db.commit()
     return {"message": "Challenge completed", "xp_earned": xp_earned}
-
-
-def award_xp(user_id: int, amount: int, db: Session) -> int:
-    user_xp = db.query(models.UserXP).filter(
-        models.UserXP.user_id == user_id
-    ).first()
-
-    if user_xp:
-        user_xp.total_xp += amount
-        new_xp = user_xp.total_xp
-    else:
-        new_xp = amount
-        user_xp = models.UserXP(user_id=user_id, total_xp=amount)
-        db.add(user_xp)
-
-    level_info = get_level(new_xp)
-    user_xp.current_level = level_info["level"]
-    db.commit()
-    return amount
 
 
 @router.get("/streak")
@@ -172,7 +195,6 @@ def get_streak(
     today = date.today()
     week_dates = get_week_dates()
 
-    # Get all streak logs for this user
     logs = db.query(models.StreakLog).filter(
         models.StreakLog.user_id == current_user.id
     ).all()

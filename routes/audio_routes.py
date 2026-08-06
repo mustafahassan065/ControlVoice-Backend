@@ -8,7 +8,6 @@ from ai_feedback import generate_feedback
 import models
 import os, shutil, uuid, json
 import boto3
-from botocore.exceptions import ClientError
 from plan_guard import check_analysis_limit
 from personal_bests import check_personal_bests
 from routes.challenge_routes import award_xp
@@ -34,16 +33,10 @@ def upload_to_s3(filepath: str, filename: str) -> str:
     )
     bucket = os.getenv("AWS_BUCKET_NAME")
     s3_key = f"recordings/{filename}"
-
-    s3_client.upload_file(
-        filepath,
-        bucket,
-        s3_key,
-        ExtraArgs={"ContentType": "audio/webm"}
-    )
-
+    s3_client.upload_file(filepath, bucket, s3_key, ExtraArgs={"ContentType": "audio/webm"})
     url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{s3_key}"
     return url
+
 
 def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
     try:
@@ -117,8 +110,8 @@ def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
         )
 
         # Step 9 — XP for assessment (+25) + beat score (+10 each new best)
-        xp_earned = 25  # base assessment XP
-        xp_earned += len(new_bests) * 10  # +10 per new personal best
+        xp_earned = 25
+        xp_earned += len(new_bests) * 10
         award_xp(recording.user_id, xp_earned, db)
 
         # Step 10 — Log streak for assessment
@@ -137,7 +130,7 @@ def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
             ))
             db.commit()
 
-        # Save personal bests in report feedback
+        # Step 11 — Save personal bests in report feedback
         if new_bests:
             report_obj = db.query(models.Report).filter(
                 models.Report.id == report.id
@@ -149,12 +142,26 @@ def transcribe_and_analyze(recording_id: int, filepath: str, db: Session):
                 report_obj.feedback = json.dumps(feedback_data)
                 db.commit()
 
+        # Step 12 — Send assessment complete + personal best emails
+        try:
+            from email_service import send_assessment_complete_email, send_personal_best_email
+            user = db.query(models.User).filter(
+                models.User.id == recording.user_id
+            ).first()
+            if user:
+                send_assessment_complete_email(user, report, db)
+                if new_bests:
+                    send_personal_best_email(user, new_bests, db)
+        except Exception as email_err:
+            print(f"Email send error (non-critical): {email_err}")
+
         print(f"✅ Report ID {report.id} saved — Authority: {scores['authority_score']} — XP earned: {xp_earned}")
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"Analysis error: {e}")
+
 
 @router.post("/upload")
 async def upload_audio(
@@ -223,9 +230,9 @@ def get_my_recordings(
         ).first()
 
         result.append({
-            "id":           rec.id,
-            "audio_url":    rec.audio_url,
-            "transcript":   rec.transcript,
+            "id":            rec.id,
+            "audio_url":     rec.audio_url,
+            "transcript":    rec.transcript,
             "acoustic_data": json.loads(rec.acoustic_data) if rec.acoustic_data else None,
             "report": {
                 "id":               report.id,
@@ -263,9 +270,9 @@ def get_recording(
     ).first()
 
     return {
-        "id":           recording.id,
-        "audio_url":    recording.audio_url,
-        "transcript":   recording.transcript,
+        "id":            recording.id,
+        "audio_url":     recording.audio_url,
+        "transcript":    recording.transcript,
         "acoustic_data": json.loads(recording.acoustic_data) if recording.acoustic_data else None,
         "report": {
             "id":               report.id,

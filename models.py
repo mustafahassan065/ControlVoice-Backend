@@ -168,3 +168,36 @@ class PersonalBest(Base):
     new_best = Column(Float, nullable=False)
     recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
     achieved_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class CoachConversation(Base):
+    __tablename__ = "coach_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    messages = Column(Text, nullable=False, default="[]")  # JSON array
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CoachQuestion(Base):
+    __tablename__ = "coach_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    question_date = Column(String, nullable=False)  # YYYY-MM-DD
+    count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class EmailPreference(Base):
+    __tablename__ = "email_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    weekly_reports = Column(Integer, default=1)
+    practice_reminders = Column(Integer, default=1)
+    achievement_emails = Column(Integer, default=1)
+    assessment_complete = Column(Integer, default=1)
+    product_updates  = Column(Integer, default=1)
+    marketing_emails = Column(Integer, default=1)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
