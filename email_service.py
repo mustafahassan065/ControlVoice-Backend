@@ -649,3 +649,126 @@ def send_monthly_report_email(user: models.User, db: Session):
         db.add(log); db.commit()
         print(f"Monthly report email error: {e}")
         return False
+
+def send_exercise_recommendation_email(user: models.User, db: Session):
+    """
+    Exercise recommendation email — based on latest report weakest score.
+    Sent 3 times/day: 8 AM, 12 PM, 6 PM scheduler se.
+    """
+    # Check preference
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
+    if pref and not pref.assessment_complete:
+        return False
+
+    # Latest report
+    latest_report = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+
+    if not latest_report:
+        return False
+
+    # Find weakest score
+    scores = {
+        "pause_control":  latest_report.pause_score,
+        "strong_endings": latest_report.ending_score,
+        "pitch_movement": latest_report.pitch_score,
+        "pace_control":   latest_report.pace_score,
+    }
+    weakest_category = min(scores, key=scores.get)
+    weakest_score = round(scores[weakest_category])
+
+    # Get exercise for weakest category
+    exercise = db.query(models.Exercise).filter(
+        models.Exercise.category == weakest_category
+    ).first()
+
+    if not exercise:
+        return False
+
+    category_label = CATEGORY_LABELS.get(weakest_category, weakest_category)
+    authority_score = round(latest_report.authority_score)
+    frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
+
+    CATEGORY_TIPS = {
+        "pause_control":  "Pause for 2 full seconds before your most important point. Silence is confidence.",
+        "strong_endings": "End every sentence with a downward pitch. Drop your voice — don't let it rise.",
+        "pitch_movement": "Raise your pitch on the key word in each sentence. Vary your voice intentionally.",
+        "pace_control":   "Slow down to 130-160 WPM. After each sentence, pause before continuing.",
+    }
+    coach_tip = CATEGORY_TIPS.get(weakest_category, "Practice with intention today.")
+
+    subject = f"Your Voice Exercise for Today — {exercise.title}"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0A0E1A;font-family:'Inter',Arial,sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
+
+    <div style="text-align:center;margin-bottom:24px;">
+      <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 6px;">Voice Control AI</p>
+      <h1 style="font-family:Georgia,serif;font-size:24px;color:#FFFFFF;margin:0;">Your Coach Recommends</h1>
+    </div>
+
+    <div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);">
+      <p style="font-size:14px;color:rgba(255,255,255,0.7);margin:0;">
+        Hi <strong style="color:#FFFFFF;">{user.name.split()[0]}</strong> — based on your latest assessment (Authority Score: <strong style="color:#C9A84C;">{authority_score}</strong>), your <strong style="color:#F87171;">{category_label}</strong> score is <strong style="color:#F87171;">{weakest_score}/100</strong>. Here is today's targeted exercise.
+      </p>
+    </div>
+
+    <div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:14px;border:1px solid rgba(201,168,76,0.28);">
+      <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 6px;">Today's Exercise · {category_label}</p>
+      <h2 style="font-family:Georgia,serif;font-size:20px;color:#FFFFFF;margin:0 0 10px;">{exercise.title}</h2>
+      <p style="font-size:14px;color:rgba(255,255,255,0.7);line-height:1.7;margin:0;">{exercise.instruction}</p>
+    </div>
+
+    <div style="background:rgba(201,168,76,0.07);border:1px solid rgba(201,168,76,0.2);border-radius:12px;padding:18px 22px;margin-bottom:14px;">
+      <p style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 8px;">Practice Sentence</p>
+      <p style="font-family:Georgia,serif;font-size:16px;color:#E8C97A;font-style:italic;margin:0;">"{exercise.practice_template}"</p>
+    </div>
+
+    <div style="background:#111827;border-radius:12px;padding:16px 20px;margin-bottom:20px;border:1px solid rgba(255,255,255,0.08);display:flex;gap:12px;align-items:flex-start;">
+      <span style="font-size:18px;flex-shrink:0;">💡</span>
+      <p style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;margin:0;"><strong style="color:#FFFFFF;">Coach tip:</strong> {coach_tip}</p>
+    </div>
+
+    <div style="text-align:center;margin-bottom:28px;">
+      <a href="{frontend_url}/exercises"
+         style="display:inline-block;background:#C9A84C;color:#0A0E1A;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-right:10px;">
+        View All Exercises
+      </a>
+      <a href="{frontend_url}/record"
+         style="display:inline-block;background:transparent;color:#C9A84C;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;border:1px solid rgba(201,168,76,0.4);">
+        Record Today
+      </a>
+    </div>
+
+    <p style="text-align:center;font-size:12px;color:rgba(255,255,255,0.3);">
+      Voice Control AI · <a href="{frontend_url}/dashboard" style="color:rgba(201,168,76,0.5);text-decoration:none;">Dashboard</a> · <a href="{frontend_url}/settings" style="color:rgba(201,168,76,0.5);text-decoration:none;">Email Settings</a>
+    </p>
+  </div>
+</body>
+</html>"""
+
+    try:
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        log = models.EmailLog(
+            user_id=user.id, email_type="exercise_recommendation",
+            email_subject=subject, status="sent",
+            resend_id=response.get("id", "")
+        )
+        db.add(log); db.commit()
+        return True
+    except Exception as e:
+        log = models.EmailLog(
+            user_id=user.id, email_type="exercise_recommendation",
+            email_subject=subject, status="failed"
+        )
+        db.add(log); db.commit()
+        print(f"Exercise recommendation email error: {e}")
+        return False

@@ -163,3 +163,21 @@ def send_monthly_reports(db: Session = Depends(get_db)):
             if send_monthly_report_email(user, db):
                 sent += 1
     return {"sent": sent}
+
+@router.post("/send-exercise-recommendation")
+def send_exercise_recommendation(db: Session = Depends(get_db)):
+    """
+    3 baar din mein run hoga: 8 AM, 12 PM, 6 PM
+    Har user ko unki weakest category ki exercise recommend karo
+    """
+    from email_service import send_exercise_recommendation_email
+    users = db.query(models.User).all()
+    sent = 0
+    for user in users:
+        has_report = db.query(models.Report).filter(
+            models.Report.user_id == user.id
+        ).first()
+        if has_report:
+            if send_exercise_recommendation_email(user, db):
+                sent += 1
+    return {"sent": sent, "message": f"Exercise recommendation emails sent to {sent} users"}
