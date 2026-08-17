@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from database import engine
 import models
-from routes import auth_routes, audio_routes, exercise_routes, program_routes, email_routes,progress_routes,stripe_routes,report_routes,challenge_routes,coach_routes, email_preference_routes
+from routes import auth_routes, audio_routes, exercise_routes, program_routes, email_routes,progress_routes,stripe_routes,report_routes,challenge_routes,coach_routes, email_preference_routes,onboarding_routes,training_routes
 from scheduler import start_scheduler
 import os
 from fastapi import Request
@@ -49,6 +49,8 @@ app.include_router(report_routes.router)
 app.include_router(challenge_routes.router)
 app.include_router(coach_routes.router)
 app.include_router(email_preference_routes.router)
+app.include_router(onboarding_routes.router)
+app.include_router(training_routes.router)
 
 @app.on_event("startup")
 def startup_event():
