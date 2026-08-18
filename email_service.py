@@ -655,14 +655,12 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
     Exercise recommendation email — based on latest report weakest score.
     Sent 3 times/day: 8 AM, 12 PM, 6 PM scheduler se.
     """
-    # Check preference
     pref = db.query(models.EmailPreference).filter(
         models.EmailPreference.user_id == user.id
     ).first()
     if pref and not pref.assessment_complete:
         return False
 
-    # Latest report
     latest_report = db.query(models.Report).filter(
         models.Report.user_id == user.id
     ).order_by(models.Report.created_at.desc()).first()
@@ -670,7 +668,6 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
     if not latest_report:
         return False
 
-    # Find weakest score
     scores = {
         "pause_control":  latest_report.pause_score,
         "strong_endings": latest_report.ending_score,
@@ -679,8 +676,8 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
     }
     weakest_category = min(scores, key=scores.get)
     weakest_score = round(scores[weakest_category])
+    all_scores = {k: round(v) for k, v in scores.items()}
 
-    # Get exercise for weakest category
     exercise = db.query(models.Exercise).filter(
         models.Exercise.category == weakest_category
     ).first()
@@ -691,62 +688,153 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
     category_label = CATEGORY_LABELS.get(weakest_category, weakest_category)
     authority_score = round(latest_report.authority_score)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
+    exercises_url = f"{frontend_url}/exercises?category={weakest_category}"
 
-    CATEGORY_TIPS = {
-        "pause_control":  "Pause for 2 full seconds before your most important point. Silence is confidence.",
-        "strong_endings": "End every sentence with a downward pitch. Drop your voice — don't let it rise.",
-        "pitch_movement": "Raise your pitch on the key word in each sentence. Vary your voice intentionally.",
-        "pace_control":   "Slow down to 130-160 WPM. After each sentence, pause before continuing.",
+    # Detailed why + how per category
+    CATEGORY_DETAIL = {
+        "pause_control": {
+            "why": f"Your Pause Control score is {weakest_score}/100. This means you are not pausing long enough between ideas — making your speech sound rushed and less authoritative.",
+            "how": "Before your most important point, stop completely. Count silently: one... two... then continue. This pause signals confidence to your listener.",
+            "steps": [
+                "Read your practice sentence once at your normal pace.",
+                "Read it again — pause 2 full seconds before the key word.",
+                "Record yourself on the third attempt.",
+                "Listen back and check: did you actually pause?",
+            ],
+            "tip": "Professional speakers use silence as a tool. The pause is not empty — it creates anticipation."
+        },
+        "strong_endings": {
+            "why": f"Your Strong Endings score is {weakest_score}/100. Your sentences are ending with a rising pitch — this sounds uncertain and undermines your authority.",
+            "how": "At the end of every statement, consciously drop your pitch downward. Think of it as placing a full stop with your voice.",
+            "steps": [
+                "Say a sentence and notice if your voice rises at the end.",
+                "Repeat the same sentence and deliberately lower your pitch on the last word.",
+                "Record yourself saying 3 statements with strong downward endings.",
+                "Listen back — does each sentence end with confidence?",
+            ],
+            "tip": "A rising ending turns a statement into a question. Drop your pitch and own your words."
+        },
+        "pitch_movement": {
+            "why": f"Your Pitch Movement score is {weakest_score}/100. Your voice is staying at one level — this sounds flat and monotone, making it harder for listeners to stay engaged.",
+            "how": "Identify the most important word in each sentence and raise your pitch on that word only. Let everything else stay lower.",
+            "steps": [
+                "Read your practice sentence in a completely flat tone.",
+                "Now identify the ONE most important word.",
+                "Read it again — raise your pitch on that word only.",
+                "Record yourself and compare both attempts.",
+            ],
+            "tip": "Pitch variation is not about being dramatic. One intentional raise per sentence is enough."
+        },
+        "pace_control": {
+            "why": f"Your Pace Control score is {weakest_score}/100. You are speaking outside the 130-160 WPM range — either too fast (losing the listener) or too slow (losing their attention).",
+            "how": "Record 60 seconds of natural speech and count the words. Aim for 130-160 words. If you are over, slow down by pausing between sentences.",
+            "steps": [
+                "Read your practice sentence at your normal pace.",
+                "Count the words and estimate your speed.",
+                "Adjust: if too fast, add a breath after each sentence.",
+                "Record the final attempt at your target pace.",
+            ],
+            "tip": "Slow is not the same as boring. A controlled pace gives your words weight."
+        },
     }
-    coach_tip = CATEGORY_TIPS.get(weakest_category, "Practice with intention today.")
 
-    subject = f"Your Voice Exercise for Today — {exercise.title}"
+    detail = CATEGORY_DETAIL.get(weakest_category, {
+        "why": f"Your {category_label} score is {weakest_score}/100 — this is your current development area.",
+        "how": exercise.instruction,
+        "steps": ["Practice the exercise", "Record yourself", "Listen back", "Repeat"],
+        "tip": "Consistent practice is the only path to improvement."
+    })
+
+    steps_html = "".join([
+        f'<div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start;">'
+        f'<span style="background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.3);color:#C9A84C;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;">{i+1}</span>'
+        f'<p style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.6;margin:0;">{step}</p>'
+        f'</div>'
+        for i, step in enumerate(detail["steps"])
+    ])
+
+    scores_html = "".join([
+        f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+        f'<span style="font-size:13px;color:rgba(255,255,255,0.6);">{CATEGORY_LABELS.get(k, k)}</span>'
+        f'<span style="font-size:14px;font-weight:700;color:{"#F87171" if k == weakest_category else "#4ADE80" if v >= 70 else "#C9A84C"};">{v}/100{" ← Focus here" if k == weakest_category else ""}</span>'
+        f'</div>'
+        for k, v in all_scores.items()
+    ])
+
+    subject = f"AI Voice Coach — Your {category_label} needs work ({weakest_score}/100)"
 
     html = f"""<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#0A0E1A;font-family:'Inter',Arial,sans-serif;">
-  <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
+  <div style="max-width:580px;margin:0 auto;padding:32px 16px;">
 
-    <div style="text-align:center;margin-bottom:24px;">
+    <div style="text-align:center;margin-bottom:28px;">
       <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 6px;">Voice Control AI</p>
-      <h1 style="font-family:Georgia,serif;font-size:24px;color:#FFFFFF;margin:0;">Your Coach Recommends</h1>
+      <h1 style="font-family:Georgia,serif;font-size:24px;color:#FFFFFF;margin:0 0 6px;">Your AI Voice Coach</h1>
+      <p style="font-size:13px;color:rgba(255,255,255,0.4);margin:0;">Personalized training based on your voice data</p>
     </div>
 
+    <!-- GREETING + AUTHORITY SCORE -->
     <div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);">
-      <p style="font-size:14px;color:rgba(255,255,255,0.7);margin:0;">
-        Hi <strong style="color:#FFFFFF;">{user.name.split()[0]}</strong> — based on your latest assessment (Authority Score: <strong style="color:#C9A84C;">{authority_score}</strong>), your <strong style="color:#F87171;">{category_label}</strong> score is <strong style="color:#F87171;">{weakest_score}/100</strong>. Here is today's targeted exercise.
+      <p style="font-size:14px;color:rgba(255,255,255,0.8);margin:0 0 10px;">
+        Hi <strong style="color:#FFFFFF;">{user.name.split()[0]}</strong> — your current Authority Score is <strong style="color:#C9A84C;font-size:16px;">{authority_score}/100</strong>.
+        Your AI Voice Coach has identified your biggest area to work on today.
       </p>
     </div>
 
+    <!-- SCORE BREAKDOWN -->
+    <div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);">
+      <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.4);font-weight:600;margin:0 0 12px;">Your Current Scores</p>
+      {scores_html}
+    </div>
+
+    <!-- WHY THIS MATTERS -->
+    <div style="background:rgba(248,113,113,0.07);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:20px 24px;margin-bottom:14px;">
+      <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#F87171;font-weight:600;margin:0 0 10px;">⚠️ Why This Needs Attention</p>
+      <p style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.7;margin:0;">{detail["why"]}</p>
+    </div>
+
+    <!-- TODAY'S EXERCISE -->
     <div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:14px;border:1px solid rgba(201,168,76,0.28);">
       <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 6px;">Today's Exercise · {category_label}</p>
-      <h2 style="font-family:Georgia,serif;font-size:20px;color:#FFFFFF;margin:0 0 10px;">{exercise.title}</h2>
-      <p style="font-size:14px;color:rgba(255,255,255,0.7);line-height:1.7;margin:0;">{exercise.instruction}</p>
+      <h2 style="font-family:Georgia,serif;font-size:20px;color:#FFFFFF;margin:0 0 12px;">{exercise.title}</h2>
+      <p style="font-size:14px;color:rgba(255,255,255,0.75);line-height:1.7;margin:0 0 14px;">{detail["how"]}</p>
+      <div style="background:rgba(201,168,76,0.06);border-radius:8px;padding:14px 16px;">
+        <p style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#C9A84C;font-weight:600;margin:0 0 8px;">Practice Sentence</p>
+        <p style="font-family:Georgia,serif;font-size:15px;color:#E8C97A;font-style:italic;margin:0;">"{exercise.practice_template}"</p>
+      </div>
     </div>
 
-    <div style="background:rgba(201,168,76,0.07);border:1px solid rgba(201,168,76,0.2);border-radius:12px;padding:18px 22px;margin-bottom:14px;">
-      <p style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#C9A84C;font-weight:600;margin:0 0 8px;">Practice Sentence</p>
-      <p style="font-family:Georgia,serif;font-size:16px;color:#E8C97A;font-style:italic;margin:0;">"{exercise.practice_template}"</p>
+    <!-- STEP BY STEP -->
+    <div style="background:#111827;border-radius:12px;padding:20px 24px;margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);">
+      <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.4);font-weight:600;margin:0 0 14px;">How To Practice — Step by Step</p>
+      {steps_html}
     </div>
 
-    <div style="background:#111827;border-radius:12px;padding:16px 20px;margin-bottom:20px;border:1px solid rgba(255,255,255,0.08);display:flex;gap:12px;align-items:flex-start;">
-      <span style="font-size:18px;flex-shrink:0;">💡</span>
-      <p style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;margin:0;"><strong style="color:#FFFFFF;">Coach tip:</strong> {coach_tip}</p>
+    <!-- AI VOICE COACH TIP -->
+    <div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.18);border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start;">
+      <span style="font-size:20px;flex-shrink:0;">🎓</span>
+      <p style="font-size:13px;color:rgba(255,255,255,0.8);line-height:1.6;margin:0;">
+        <strong style="color:#C9A84C;">AI Voice Coach tip:</strong> {detail["tip"]}
+      </p>
     </div>
 
+    <!-- CTA -->
     <div style="text-align:center;margin-bottom:28px;">
-      <a href="{frontend_url}/exercises"
-         style="display:inline-block;background:#C9A84C;color:#0A0E1A;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-right:10px;">
-        View All Exercises
+      <a href="{exercises_url}"
+         style="display:inline-block;background:#C9A84C;color:#0A0E1A;padding:13px 32px;border-radius:8px;font-size:15px;font-weight:700;text-decoration:none;margin-bottom:10px;display:block;">
+        Practice This Exercise Now →
       </a>
       <a href="{frontend_url}/record"
-         style="display:inline-block;background:transparent;color:#C9A84C;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;border:1px solid rgba(201,168,76,0.4);">
-        Record Today
+         style="display:inline-block;background:transparent;color:#C9A84C;padding:11px 28px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(201,168,76,0.35);margin-top:8px;">
+        Record a New Assessment
       </a>
     </div>
 
-    <p style="text-align:center;font-size:12px;color:rgba(255,255,255,0.3);">
-      Voice Control AI · <a href="{frontend_url}/dashboard" style="color:rgba(201,168,76,0.5);text-decoration:none;">Dashboard</a> · <a href="{frontend_url}/settings" style="color:rgba(201,168,76,0.5);text-decoration:none;">Email Settings</a>
+    <p style="text-align:center;font-size:12px;color:rgba(255,255,255,0.25);">
+      Voice Control AI · AI Voice Coach<br>
+      <a href="{frontend_url}/dashboard" style="color:rgba(201,168,76,0.5);text-decoration:none;">Dashboard</a> ·
+      <a href="{frontend_url}/settings" style="color:rgba(201,168,76,0.5);text-decoration:none;">Email Settings</a>
     </p>
   </div>
 </body>
