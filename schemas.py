@@ -16,6 +16,7 @@ class UserOut(BaseModel):
     name: str
     email: str
     plan: str
+    onboarding_completed: Optional[int] = 0
     created_at: datetime
 
     class Config:
@@ -25,6 +26,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     user: UserOut
+    onboarding_required: Optional[bool] = False
 
 class RecordingOut(BaseModel):
     id: int
