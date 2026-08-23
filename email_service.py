@@ -861,7 +861,7 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
         print(f"Exercise recommendation email error: {e}")
         return False
 
-# ═══ GRAPHIC GENERATOR — Base64 embedded ═══
+# ═══ GRAPHIC GENERATOR — S3 hosted ═══
 
 def _generate_graphic_b64(
     authority_score=87,
@@ -884,7 +884,7 @@ def _generate_graphic_b64(
         import matplotlib.pyplot as plt
         import matplotlib.patches as patches
         import numpy as np
-        import io, base64
+        import io, base64, boto3, uuid
 
         fig = plt.figure(figsize=(7.5, 3.5), facecolor='#FDFCF8')
         ax = fig.add_axes([0, 0, 1, 1])
@@ -895,33 +895,21 @@ def _generate_graphic_b64(
 
         cx, cy, r = 1.9, 1.75, 1.38
 
-        # Evening: faint before arc
         if email_type == "evening" and prev_score is not None:
-            theta_prev = np.linspace(
-                np.radians(-225 + 270*(prev_score/100)),
-                np.radians(-225), 300)
-            ax.plot(cx + r*np.cos(theta_prev), cy + r*np.sin(theta_prev),
-                    color='#DEDAD2', linewidth=4, solid_capstyle='round')
+            theta_prev = np.linspace(np.radians(-225 + 270*(prev_score/100)), np.radians(-225), 300)
+            ax.plot(cx + r*np.cos(theta_prev), cy + r*np.sin(theta_prev), color='#DEDAD2', linewidth=4, solid_capstyle='round')
 
-        # Main arc
-        theta = np.linspace(
-            np.radians(-225 + 270*(authority_score/100)),
-            np.radians(-225), 300)
-        ax.plot(cx + r*np.cos(theta), cy + r*np.sin(theta),
-                color='#1A1A1B', linewidth=5, solid_capstyle='round')
+        theta = np.linspace(np.radians(-225 + 270*(authority_score/100)), np.radians(-225), 300)
+        ax.plot(cx + r*np.cos(theta), cy + r*np.sin(theta), color='#1A1A1B', linewidth=5, solid_capstyle='round')
 
-        # Inner circle
         ax.add_patch(plt.Circle((cx, cy), 0.46, color='#F5F3EF', zorder=3))
         ax.add_patch(plt.Circle((cx, cy), 0.46, fill=False, edgecolor='#DEDAD2', linewidth=1.2, zorder=4))
-
         ax.text(cx, cy+0.22, center_label, ha='center', va='center', fontsize=6, color='#9A9890', zorder=5)
         ax.text(cx, cy-0.08, str(authority_score), ha='center', va='center', fontsize=28, color='#1A1A1B', zorder=5)
         ax.text(cx, cy+r+0.18, label_top, ha='center', fontsize=9, color='#4A4840')
         ax.text(cx, cy-r-0.18, label_bottom, ha='center', fontsize=9, color='#4A4840')
 
-        # Coaching box
-        ax.add_patch(patches.FancyBboxPatch((3.4, 2.62), 3.8, 0.62,
-            boxstyle="round,pad=0.08", facecolor='#F0EDE6', edgecolor='none'))
+        ax.add_patch(patches.FancyBboxPatch((3.4, 2.62), 3.8, 0.62, boxstyle="round,pad=0.08", facecolor='#F0EDE6', edgecolor='none'))
         ax.text(3.58, 2.98, coaching_title, fontsize=8, color='#4A4840', fontweight='semibold')
         ax.text(3.58, 2.74, coaching_sub, fontsize=8, color='#8A7A60')
         ax.text(3.4, 2.28, pace_label, fontsize=9, color='#4A4840')
@@ -935,18 +923,37 @@ def _generate_graphic_b64(
 
         ax.text(3.4, 1.28, score_left_label, fontsize=8, color='#9A9890')
         ax.text(3.4, 1.06, score_left_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
-        ax.text(5.4, 1.28, score_right_label, fontsize=8, color='#9A9490')
+        ax.text(5.4, 1.28, score_right_label, fontsize=8, color='#9A9890')
         ax.text(5.4, 1.06, score_right_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
 
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#FDFCF8')
         buf.seek(0)
-        b64 = base64.b64encode(buf.read()).decode('utf-8')
+        img_bytes = buf.read()
         plt.close()
-        return b64
+
+        # Upload to S3
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name=os.getenv("AWS_REGION", "us-east-1")
+        )
+        bucket = os.getenv("AWS_BUCKET_NAME")
+        key = f"email-graphics/{uuid.uuid4()}.png"
+        s3.put_object(Bucket=bucket, Key=key, Body=img_bytes, ContentType='image/png', ACL='public-read')
+        url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{key}"
+        return url
+
     except Exception as e:
         print(f"Graphic generation error: {e}")
         return None
+
+
+def _graphic_img_tag(url: str) -> str:
+    if not url:
+        return ""
+    return f'<img src="{url}" alt="Voice Score Graphic" style="width:100%;max-width:520px;display:block;margin:0 auto;" width="520"/>'
 
 
 def _get_weakest(latest_report) -> tuple:
@@ -972,12 +979,6 @@ def _get_weakest(latest_report) -> tuple:
     return weakest_key, round(scores[weakest_key]), labels[weakest_key], scripts.get(weakest_key, "")
 
 
-def _graphic_img_tag(b64: str) -> str:
-    if not b64:
-        return ""
-    return f'<img src="data:image/png;base64,{b64}" alt="Voice Score Graphic" style="width:100%;max-width:520px;display:block;margin:0 auto;" width="520"/>'
-
-
 def send_morning_email(user: models.User, db: Session):
     pref = db.query(models.EmailPreference).filter(models.EmailPreference.user_id == user.id).first()
     if pref and not pref.assessment_complete:
@@ -991,23 +992,17 @@ def send_morning_email(user: models.User, db: Session):
     pace = round(latest_report.pace_score or 0)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
-    b64 = _generate_graphic_b64(
-        authority_score=weakest_score,
-        center_label=weakest_label.upper()[:9],
-        label_top="Today's Focus",
-        label_bottom="Weakest Area",
-        coaching_title="Morning Blueprint",
-        coaching_sub=f"★ {weakest_label} drill",
-        pace_label="Speaking Rate",
-        score_left_label="Authority Score",
-        score_left_val=f"{authority}/100",
-        score_right_label="Pace Control",
-        score_right_val=f"{pace}/100",
-        email_type="morning",
+    img_url = _generate_graphic_b64(
+        authority_score=weakest_score, center_label=weakest_label.upper()[:9],
+        label_top="Today's Focus", label_bottom="Weakest Area",
+        coaching_title="Morning Blueprint", coaching_sub=f"★ {weakest_label} drill",
+        pace_label="Speaking Rate", score_left_label="Authority Score",
+        score_left_val=f"{authority}/100", score_right_label="Pace Control",
+        score_right_val=f"{pace}/100", email_type="morning",
     )
 
     script_html = script.replace("[PAUSE]",
-        '<span style="border-bottom:1.5px solid #1A1A1B;padding:0 5px;font-family:Inter,sans-serif;font-size:11px;font-weight:600;font-style:normal;">PAUSE</span>'
+        '<span style="border-bottom:1.5px solid #1A1A1B;padding:0 5px;font-size:11px;font-weight:600;">PAUSE</span>'
     ).replace("[DOWN]", '<span style="font-weight:700;"> ↓ </span>')
 
     subject = f"Voice Control AI — Morning Blueprint · {weakest_label}"
@@ -1018,7 +1013,7 @@ def send_morning_email(user: models.User, db: Session):
     <div style="font-size:20px;color:#1A1A1B;font-weight:500;">Good morning, {user.name.split()[0]}.</div>
     <div style="font-size:13px;color:#9A9890;margin-top:3px;">Your strategy script for today is ready.</div>
   </div>
-  <div style="padding:24px 20px 16px;">{_graphic_img_tag(b64)}</div>
+  <div style="padding:24px 20px 16px;">{_graphic_img_tag(img_url)}</div>
   <div style="padding:0 28px 28px;">
     <div style="border:0.5px solid #ECEAE4;border-radius:12px;padding:16px 18px;margin-bottom:16px;background:#fff;">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#8A7A60;font-weight:600;margin-bottom:10px;">Today's Script · {weakest_label}</div>
@@ -1054,7 +1049,6 @@ def send_afternoon_email(user: models.User, db: Session):
     authority = round(latest_report.authority_score)
     pause = round(latest_report.pause_score or 0)
     endings = round(latest_report.ending_score or 0)
-    pace = round(latest_report.pace_score or 0)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
     exercises_url = f"{frontend_url}/exercises?category={weakest_key}"
 
@@ -1062,19 +1056,13 @@ def send_afternoon_email(user: models.User, db: Session):
     exercise_title = exercise.title if exercise else f"{weakest_label} Exercise"
     exercise_desc = (exercise.instruction[:120] + "...") if exercise and len(exercise.instruction) > 120 else (exercise.instruction if exercise else "")
 
-    b64 = _generate_graphic_b64(
-        authority_score=authority,
-        center_label="AUTHORITY",
-        label_top="Clarity",
-        label_bottom="Resonance",
-        coaching_title="Real-time Coaching",
-        coaching_sub="★ Optimal steady flow",
-        pace_label="Pace",
-        score_left_label="Pause Control",
-        score_left_val=f"{pause}/100",
-        score_right_label="Strong Endings",
-        score_right_val=f"{endings}/100",
-        email_type="afternoon",
+    img_url = _generate_graphic_b64(
+        authority_score=authority, center_label="AUTHORITY",
+        label_top="Clarity", label_bottom="Resonance",
+        coaching_title="Real-time Coaching", coaching_sub="★ Optimal steady flow",
+        pace_label="Pace", score_left_label="Pause Control",
+        score_left_val=f"{pause}/100", score_right_label="Strong Endings",
+        score_right_val=f"{endings}/100", email_type="afternoon",
     )
 
     subject = f"Voice Control AI — Score Report · Authority {authority}/100"
@@ -1085,7 +1073,7 @@ def send_afternoon_email(user: models.User, db: Session):
     <div style="font-size:20px;color:#1A1A1B;font-weight:500;">Your voice report, {user.name.split()[0]}.</div>
     <div style="font-size:13px;color:#9A9890;margin-top:3px;">Based on your latest recording.</div>
   </div>
-  <div style="padding:24px 20px 16px;">{_graphic_img_tag(b64)}</div>
+  <div style="padding:24px 20px 16px;">{_graphic_img_tag(img_url)}</div>
   <div style="padding:0 28px 28px;">
     <div style="border:0.5px solid #ECEAE4;border-radius:12px;padding:16px 18px;margin-bottom:16px;background:#fff;">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#8A7A60;font-weight:600;margin-bottom:6px;">AI Voice Coach · {weakest_label}</div>
@@ -1128,20 +1116,16 @@ def send_evening_email(user: models.User, db: Session):
     weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
-    b64 = _generate_graphic_b64(
-        authority_score=authority_now,
-        center_label="TODAY",
-        label_top="Improvement",
-        label_bottom="Progress",
+    img_url = _generate_graphic_b64(
+        authority_score=authority_now, center_label="TODAY",
+        label_top="Improvement", label_bottom="Progress",
         coaching_title="Daily Progress Review",
         coaching_sub=f"★ {'Strong improvement' if improvement > 0 else 'Keep going'} today",
-        pace_label="Pace",
-        score_left_label="Authority Score",
+        pace_label="Pace", score_left_label="Authority Score",
         score_left_val=f"{authority_prev} → {authority_now}",
         score_right_label="Pause Control",
         score_right_val=f"{pause_prev} → {pause_now}",
-        email_type="evening",
-        prev_score=authority_prev,
+        email_type="evening", prev_score=authority_prev,
     )
 
     subject = f"Voice Control AI — Evening Review · {improvement_text} points today"
@@ -1152,7 +1136,7 @@ def send_evening_email(user: models.User, db: Session):
     <div style="font-size:20px;color:#1A1A1B;font-weight:500;">See how far you came today, {user.name.split()[0]}.</div>
     <div style="font-size:13px;color:#9A9890;margin-top:3px;">Your progress compared to your previous recording.</div>
   </div>
-  <div style="padding:24px 20px 16px;">{_graphic_img_tag(b64)}</div>
+  <div style="padding:24px 20px 16px;">{_graphic_img_tag(img_url)}</div>
   <div style="padding:0 28px 28px;">
     <div style="border-left:1.5px solid #1A1A1B;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#4A4840;line-height:1.6;background:#fff;border-radius:0 8px 8px 0;">
       <strong>AI Voice Coach:</strong> {"Your Authority Score improved by " + str(improvement) + " points today. " if improvement > 0 else "Keep practicing — consistency is key. "}Tomorrow we shift focus to your {weakest_label} — target 80/100.
