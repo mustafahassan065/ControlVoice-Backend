@@ -860,3 +860,373 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
         db.add(log); db.commit()
         print(f"Exercise recommendation email error: {e}")
         return False
+
+# ═══ HELPER: SVG arc path for score ═══
+def _score_arc(score: int) -> str:
+    """Convert score 0-100 to SVG arc dashoffset for C-shape arc"""
+    # C-shape arc total length ~691 (270 degree arc, r=110)
+    # 100% = full arc (dashoffset=0), 0% = no arc (dashoffset=691)
+    arc_length = 691
+    filled = int((score / 100) * arc_length)
+    offset = arc_length - filled
+    return str(offset)
+
+
+def _get_weakest(latest_report) -> tuple:
+    """Return (category_key, score, label) of weakest area"""
+    scores = {
+        "pause_control":  latest_report.pause_score  or 0,
+        "strong_endings": latest_report.ending_score or 0,
+        "pitch_movement": latest_report.pitch_score  or 0,
+        "pace_control":   latest_report.pace_score   or 0,
+    }
+    weakest_key = min(scores, key=scores.get)
+    labels = {
+        "pause_control":  "Pause Control",
+        "strong_endings": "Strong Endings",
+        "pitch_movement": "Pitch Movement",
+        "pace_control":   "Pace Control",
+    }
+    scripts = {
+        "pause_control":  "The most important thing [PAUSE] about clear communication [↓] is not what you say — but how deliberately you say it.",
+        "strong_endings": "I am confident in this decision [↓]. The plan is clear [↓]. We move forward today [↓].",
+        "pitch_movement": "This idea WILL work. The results SPEAK for themselves. Let me show you WHY.",
+        "pace_control":   "Take your time. Speak clearly. Make every word count. Pause between your thoughts.",
+    }
+    return weakest_key, round(scores[weakest_key]), labels[weakest_key], scripts.get(weakest_key, "")
+
+
+def send_morning_email(user: models.User, db: Session):
+    """Morning email — script blueprint with graphic"""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
+    if pref and not pref.assessment_complete:
+        return False
+
+    latest_report = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+    if not latest_report:
+        return False
+
+    weakest_key, weakest_score, weakest_label, script = _get_weakest(latest_report)
+    authority = round(latest_report.authority_score)
+    pace = round(latest_report.pace_score or 0)
+    pitch = round(latest_report.pitch_score or 0)
+    arc_offset = _score_arc(weakest_score)
+    frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
+
+    # Format script with markers
+    script_html = script.replace(
+        "[PAUSE]",
+        '<span style="border-bottom:1.5px solid #1A1A1B;padding:0 5px;font-family:Inter,sans-serif;font-size:11px;font-weight:600;font-style:normal;letter-spacing:0.05em;">PAUSE</span>'
+    ).replace(
+        "[↓]",
+        '<span style="font-weight:700;font-size:15px;"> ↓ </span>'
+    )
+
+    subject = f"Voice Control AI — Your Morning Blueprint · {weakest_label}"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#FDFCF8;font-family:'Inter',Arial,sans-serif;">
+<div style="max-width:560px;margin:0 auto;padding:0;background:#FDFCF8;">
+
+  <!-- HEADER -->
+  <div style="padding:22px 28px 18px;border-bottom:0.5px solid #ECEAE4;">
+    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#8A7A60;font-weight:600;margin-bottom:5px;">Voice Control AI · Morning Blueprint</div>
+    <div style="font-size:20px;color:#1A1A1B;font-weight:500;">Good morning, {user.name.split()[0]}.</div>
+    <div style="font-size:13px;color:#9A9890;margin-top:3px;">Your strategy script for today is ready.</div>
+  </div>
+
+  <!-- MAIN GRAPHIC -->
+  <div style="padding:28px 20px 20px;text-align:center;">
+    <svg width="100%" viewBox="0 0 460 220" xmlns="http://www.w3.org/2000/svg" style="display:block;max-width:460px;margin:0 auto;overflow:visible;">
+      <!-- Clarity label -->
+      <text x="148" y="22" text-anchor="middle" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Today's Focus</text>
+      <!-- C-arc sized by weakest score -->
+      <path d="M 148 35 A 110 110 0 1 0 148 195"
+        fill="none" stroke="#1A1A1B" stroke-width="4" stroke-linecap="round"
+        stroke-dasharray="691" stroke-dashoffset="{arc_offset}"/>
+      <!-- Inner circle -->
+      <circle cx="148" cy="115" r="36" fill="#F5F3EF" stroke="#DEDAD2" stroke-width="1"/>
+      <text x="148" y="110" text-anchor="middle" font-size="9" fill="#9A9890" font-family="Inter,sans-serif" letter-spacing="1">{weakest_label.upper()[:8]}</text>
+      <text x="148" y="133" text-anchor="middle" font-size="28" font-weight="400" fill="#1A1A1B" font-family="Inter,sans-serif">{weakest_score}</text>
+      <!-- Bottom label -->
+      <text x="148" y="218" text-anchor="middle" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Weakest Area</text>
+      <!-- Coaching box -->
+      <rect x="240" y="28" width="205" height="44" rx="8" fill="#F0EDE6" stroke="none"/>
+      <text x="254" y="48" font-size="11" fill="#4A4840" font-family="Inter,sans-serif" font-weight="600">Morning Blueprint</text>
+      <text x="254" y="64" font-size="11" fill="#8A7A60" font-family="Inter,sans-serif">★ {weakest_label} drill</text>
+      <!-- Speaking Rate label -->
+      <text x="240" y="118" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Speaking Rate</text>
+      <!-- Waveform lines -->
+      <polyline points="240,136 265,128 285,134 305,124 325,130 345,120 365,126 385,132 405,122 430,128 455,124"
+        fill="none" stroke="#DEDAD2" stroke-width="1.5" stroke-linejoin="round"/>
+      <polyline points="240,140 265,132 285,138 305,126 325,134 345,122 365,130 385,136 405,124 430,130 455,126"
+        fill="none" stroke="#1A1A1B" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="345" cy="122" r="3" fill="#1A1A1B"/>
+      <!-- Score labels -->
+      <text x="240" y="172" font-size="11" fill="#9A9890" font-family="Inter,sans-serif">Authority Score</text>
+      <text x="240" y="186" font-size="12" fill="#1A1A1B" font-family="Inter,sans-serif" font-weight="600">{authority}/100</text>
+      <text x="358" y="172" font-size="11" fill="#9A9890" font-family="Inter,sans-serif">Pace Control</text>
+      <text x="358" y="186" font-size="12" fill="#1A1A1B" font-family="Inter,sans-serif" font-weight="600">{pace}/100</text>
+    </svg>
+  </div>
+
+  <!-- SCRIPT -->
+  <div style="padding:0 28px 28px;">
+    <div style="border:0.5px solid #ECEAE4;border-radius:12px;padding:16px 18px;margin-bottom:16px;background:#fff;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#8A7A60;font-weight:600;margin-bottom:10px;">Today's Script · {weakest_label}</div>
+      <div style="font-size:15px;color:#1A1A1B;font-family:Georgia,serif;line-height:1.9;margin-bottom:10px;">{script_html}</div>
+      <div style="font-size:12px;color:#9A9890;">⏱ 2 min &nbsp;·&nbsp; {weakest_label} &nbsp;·&nbsp; Beginner</div>
+    </div>
+    <div style="text-align:center;">
+      <a href="{frontend_url}/record" style="display:inline-block;background:#1A1A1B;color:#fff;padding:12px 32px;border-radius:30px;font-size:13px;font-weight:500;text-decoration:none;">Open Today's Blueprint</a>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#BBBAB6;margin-top:20px;">Voice Control AI &nbsp;·&nbsp; <a href="{frontend_url}/settings" style="color:#BBBAB6;">Email Settings</a></p>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    try:
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        log = models.EmailLog(user_id=user.id, email_type="morning_blueprint",
+            email_subject=subject, status="sent", resend_id=response.get("id", ""))
+        db.add(log); db.commit()
+        return True
+    except Exception as e:
+        log = models.EmailLog(user_id=user.id, email_type="morning_blueprint",
+            email_subject=subject, status="failed")
+        db.add(log); db.commit()
+        print(f"Morning email error: {e}")
+        return False
+
+
+def send_afternoon_email(user: models.User, db: Session):
+    """Afternoon email — full score report with graphic"""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
+    if pref and not pref.assessment_complete:
+        return False
+
+    latest_report = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+    if not latest_report:
+        return False
+
+    weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest_report)
+    authority = round(latest_report.authority_score)
+    pause = round(latest_report.pause_score or 0)
+    endings = round(latest_report.ending_score or 0)
+    pace = round(latest_report.pace_score or 0)
+    pitch = round(latest_report.pitch_score or 0)
+    arc_offset = _score_arc(authority)
+
+    exercise = db.query(models.Exercise).filter(
+        models.Exercise.category == weakest_key
+    ).first()
+    exercise_title = exercise.title if exercise else weakest_label + " Exercise"
+    exercise_desc = exercise.instruction[:120] + "..." if exercise and len(exercise.instruction) > 120 else (exercise.instruction if exercise else "")
+    frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
+    exercises_url = f"{frontend_url}/exercises?category={weakest_key}"
+
+    subject = f"Voice Control AI — Your Score Report · Authority {authority}/100"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#FDFCF8;font-family:'Inter',Arial,sans-serif;">
+<div style="max-width:560px;margin:0 auto;padding:0;background:#FDFCF8;">
+
+  <!-- HEADER -->
+  <div style="padding:22px 28px 18px;border-bottom:0.5px solid #ECEAE4;">
+    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#8A7A60;font-weight:600;margin-bottom:5px;">Voice Control AI · Score Report</div>
+    <div style="font-size:20px;color:#1A1A1B;font-weight:500;">Your voice report, {user.name.split()[0]}.</div>
+    <div style="font-size:13px;color:#9A9890;margin-top:3px;">Based on your latest recording.</div>
+  </div>
+
+  <!-- MAIN GRAPHIC -->
+  <div style="padding:28px 20px 20px;text-align:center;">
+    <svg width="100%" viewBox="0 0 460 220" xmlns="http://www.w3.org/2000/svg" style="display:block;max-width:460px;margin:0 auto;overflow:visible;">
+      <text x="148" y="22" text-anchor="middle" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Clarity</text>
+      <!-- Authority arc -->
+      <path d="M 148 35 A 110 110 0 1 0 148 195"
+        fill="none" stroke="#1A1A1B" stroke-width="4" stroke-linecap="round"
+        stroke-dasharray="691" stroke-dashoffset="{arc_offset}"/>
+      <circle cx="148" cy="115" r="36" fill="#F5F3EF" stroke="#DEDAD2" stroke-width="1"/>
+      <text x="148" y="110" text-anchor="middle" font-size="9" fill="#9A9890" font-family="Inter,sans-serif" letter-spacing="1">AUTHORITY</text>
+      <text x="148" y="133" text-anchor="middle" font-size="28" font-weight="400" fill="#1A1A1B" font-family="Inter,sans-serif">{authority}</text>
+      <text x="148" y="218" text-anchor="middle" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Resonance</text>
+      <!-- Coaching box -->
+      <rect x="240" y="28" width="205" height="44" rx="8" fill="#F0EDE6" stroke="none"/>
+      <text x="254" y="48" font-size="11" fill="#4A4840" font-family="Inter,sans-serif" font-weight="600">Real-time Coaching</text>
+      <text x="254" y="64" font-size="11" fill="#8A7A60" font-family="Inter,sans-serif">★ Optimal steady flow</text>
+      <!-- Pace waveform -->
+      <text x="240" y="118" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Pace</text>
+      <polyline points="240,130 265,118 285,126 305,110 325,120 345,108 365,116 385,122 405,112 430,118 455,114"
+        fill="none" stroke="#DEDAD2" stroke-width="1.5" stroke-linejoin="round"/>
+      <polyline points="240,134 265,122 285,130 305,114 325,124 345,108 365,118 385,126 405,114 430,122 455,116"
+        fill="none" stroke="#1A1A1B" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="345" cy="108" r="3" fill="#1A1A1B"/>
+      <!-- Score labels -->
+      <text x="240" y="172" font-size="11" fill="#9A9890" font-family="Inter,sans-serif">Pause Control</text>
+      <text x="240" y="186" font-size="12" fill="#1A1A1B" font-family="Inter,sans-serif" font-weight="600">{pause}/100</text>
+      <text x="358" y="172" font-size="11" fill="#9A9890" font-family="Inter,sans-serif">Strong Endings</text>
+      <text x="358" y="186" font-size="12" fill="#1A1A1B" font-family="Inter,sans-serif" font-weight="600">{endings}/100 {"← focus" if weakest_key == "strong_endings" else ""}</text>
+    </svg>
+  </div>
+
+  <!-- RECOMMENDATION -->
+  <div style="padding:0 28px 28px;">
+    <div style="border:0.5px solid #ECEAE4;border-radius:12px;padding:16px 18px;margin-bottom:16px;background:#fff;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#8A7A60;font-weight:600;margin-bottom:6px;">AI Voice Coach Recommendation · {weakest_label}</div>
+      <div style="font-size:14px;color:#1A1A1B;font-weight:500;margin-bottom:4px;">{exercise_title}</div>
+      <div style="font-size:13px;color:#6A6860;line-height:1.6;">{exercise_desc} Your {weakest_label} score is {weakest_score}/100 — this is your biggest area to fix today.</div>
+    </div>
+    <div style="text-align:center;">
+      <a href="{exercises_url}" style="display:inline-block;background:#1A1A1B;color:#fff;padding:12px 32px;border-radius:30px;font-size:13px;font-weight:500;text-decoration:none;">Practice Today's Exercise</a>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#BBBAB6;margin-top:20px;">Voice Control AI &nbsp;·&nbsp; <a href="{frontend_url}/settings" style="color:#BBBAB6;">Email Settings</a></p>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    try:
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        log = models.EmailLog(user_id=user.id, email_type="afternoon_report",
+            email_subject=subject, status="sent", resend_id=response.get("id", ""))
+        db.add(log); db.commit()
+        return True
+    except Exception as e:
+        log = models.EmailLog(user_id=user.id, email_type="afternoon_report",
+            email_subject=subject, status="failed")
+        db.add(log); db.commit()
+        print(f"Afternoon email error: {e}")
+        return False
+
+
+def send_evening_email(user: models.User, db: Session):
+    """Evening email — progress review with before/after graphic"""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
+    if pref and not pref.assessment_complete:
+        return False
+
+    reports = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).all()
+
+    if not reports:
+        return False
+
+    latest = reports[0]
+    prev = reports[1] if len(reports) > 1 else None
+
+    authority_now = round(latest.authority_score)
+    authority_prev = round(prev.authority_score) if prev else authority_now - 5
+    improvement = authority_now - authority_prev
+
+    pause_now = round(latest.pause_score or 0)
+    pause_prev = round(prev.pause_score or 0) if prev else pause_now - 8
+    pace_now = round(latest.pace_score or 0)
+    pace_prev = round(prev.pace_score or 0) if prev else pace_now - 4
+
+    weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest)
+    arc_now = _score_arc(authority_now)
+    arc_prev = _score_arc(authority_prev)
+    improvement_text = f"+{improvement}" if improvement >= 0 else str(improvement)
+    frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
+
+    subject = f"Voice Control AI — Your Evening Review · {improvement_text} points today"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#FDFCF8;font-family:'Inter',Arial,sans-serif;">
+<div style="max-width:560px;margin:0 auto;padding:0;background:#FDFCF8;">
+
+  <!-- HEADER -->
+  <div style="padding:22px 28px 18px;border-bottom:0.5px solid #ECEAE4;">
+    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#8A7A60;font-weight:600;margin-bottom:5px;">Voice Control AI · Evening Review</div>
+    <div style="font-size:20px;color:#1A1A1B;font-weight:500;">See how far you came today, {user.name.split()[0]}.</div>
+    <div style="font-size:13px;color:#9A9890;margin-top:3px;">Your progress compared to your previous recording.</div>
+  </div>
+
+  <!-- MAIN GRAPHIC -->
+  <div style="padding:28px 20px 20px;text-align:center;">
+    <svg width="100%" viewBox="0 0 460 220" xmlns="http://www.w3.org/2000/svg" style="display:block;max-width:460px;margin:0 auto;overflow:visible;">
+      <text x="148" y="22" text-anchor="middle" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Improvement</text>
+      <!-- Before arc faint -->
+      <path d="M 148 35 A 110 110 0 1 0 148 195"
+        fill="none" stroke="#DEDAD2" stroke-width="2" stroke-linecap="round"
+        stroke-dasharray="691" stroke-dashoffset="{arc_prev}"/>
+      <!-- After arc bold -->
+      <path d="M 148 35 A 110 110 0 1 0 148 195"
+        fill="none" stroke="#1A1A1B" stroke-width="4" stroke-linecap="round"
+        stroke-dasharray="691" stroke-dashoffset="{arc_now}"/>
+      <circle cx="148" cy="115" r="36" fill="#F5F3EF" stroke="#DEDAD2" stroke-width="1"/>
+      <text x="148" y="108" text-anchor="middle" font-size="9" fill="#9A9890" font-family="Inter,sans-serif" letter-spacing="1">TODAY</text>
+      <text x="148" y="132" text-anchor="middle" font-size="26" font-weight="400" fill="#1A1A1B" font-family="Inter,sans-serif">{improvement_text}</text>
+      <text x="148" y="218" text-anchor="middle" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Progress</text>
+      <!-- Coaching box -->
+      <rect x="240" y="28" width="205" height="44" rx="8" fill="#F0EDE6" stroke="none"/>
+      <text x="254" y="48" font-size="11" fill="#4A4840" font-family="Inter,sans-serif" font-weight="600">Daily Progress Review</text>
+      <text x="254" y="64" font-size="11" fill="#8A7A60" font-family="Inter,sans-serif">★ {"Strong improvement" if improvement > 0 else "Keep practicing"} today</text>
+      <!-- Before/After waveform -->
+      <text x="240" y="118" font-size="12" fill="#4A4840" font-family="Inter,sans-serif">Pace</text>
+      <polyline points="240,138 265,132 285,138 305,128 325,136 345,130 365,138 385,132 405,138 430,130 455,134"
+        fill="none" stroke="#DEDAD2" stroke-width="1.5" stroke-linejoin="round"/>
+      <polyline points="240,130 265,120 285,126 305,112 325,120 345,106 365,114 385,120 405,110 430,116 455,112"
+        fill="none" stroke="#1A1A1B" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="345" cy="106" r="3" fill="#1A1A1B"/>
+      <!-- Score labels before/after -->
+      <text x="240" y="172" font-size="11" fill="#9A9890" font-family="Inter,sans-serif">Authority Score</text>
+      <text x="240" y="186" font-size="12" fill="#1A1A1B" font-family="Inter,sans-serif" font-weight="600">{authority_prev} → {authority_now}</text>
+      <text x="358" y="172" font-size="11" fill="#9A9890" font-family="Inter,sans-serif">Pause Control</text>
+      <text x="358" y="186" font-size="12" fill="#1A1A1B" font-family="Inter,sans-serif" font-weight="600">{pause_prev} → {pause_now}</text>
+    </svg>
+  </div>
+
+  <!-- COACH TIP + CTA -->
+  <div style="padding:0 28px 28px;">
+    <div style="border-left:1.5px solid #1A1A1B;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#4A4840;line-height:1.6;background:#fff;border-radius:0 8px 8px 0;">
+      <strong>AI Voice Coach:</strong> {"Your Authority Score improved by " + str(improvement) + " points today. " if improvement > 0 else "Keep practicing — consistency is key. "}Tomorrow we shift focus to your {weakest_label} — target 80/100.
+    </div>
+    <div style="text-align:center;">
+      <a href="{frontend_url}/record" style="display:inline-block;background:#1A1A1B;color:#fff;padding:12px 32px;border-radius:30px;font-size:13px;font-weight:500;text-decoration:none;">Record Tomorrow's Session</a>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#BBBAB6;margin-top:20px;">Voice Control AI &nbsp;·&nbsp; <a href="{frontend_url}/settings" style="color:#BBBAB6;">Email Settings</a></p>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    try:
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        log = models.EmailLog(user_id=user.id, email_type="evening_review",
+            email_subject=subject, status="sent", resend_id=response.get("id", ""))
+        db.add(log); db.commit()
+        return True
+    except Exception as e:
+        log = models.EmailLog(user_id=user.id, email_type="evening_review",
+            email_subject=subject, status="failed")
+        db.add(log); db.commit()
+        print(f"Evening email error: {e}")
+        return False
