@@ -145,63 +145,20 @@ def build_user_context(user: models.User, db: Session) -> str:
 
     return context
 
-
 @router.post("/start")
 async def start_live_coach_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    if not TAVUS_API_KEY:
-        raise HTTPException(status_code=500, detail="Tavus API key not configured")
-    if not TAVUS_REPLICA_ID:
-        raise HTTPException(status_code=500, detail="Tavus Replica ID not configured")
-
-    # Build full user context
     conversation_context = build_user_context(current_user, db)
-
-    # Start Tavus conversation
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                TAVUS_API_URL,
-                headers={
-                    "x-api-key": TAVUS_API_KEY,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "deployment_id": "0db1be20-990b-44ca-8b8d-a249d272ac1f",
-                    "conversational_context": conversation_context,
-                    "custom_greeting": f"Hi {current_user.name.split()[0]}! I've reviewed your voice data and I'm ready to help you improve. Your Authority Score is {_get_authority(current_user, db)}. Let's work on your biggest opportunity today.",
-                    "properties": {
-                        "max_call_duration": 1800,  # 30 minutes max
-                        "participant_left_timeout": 60,
-                        "enable_recording": False,
-                        
-                    }
-                }
-            )
-
-        if response.status_code not in [200, 201]:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Tavus error: {response.text}"
-            )
-
-        data = response.json()
-        conversation_url = data.get("conversation_url")
-
-        if not conversation_url:
-            raise HTTPException(status_code=500, detail="No conversation URL returned from Tavus")
-
-        return {
-            "conversation_url": conversation_url,
-            "conversation_id": data.get("conversation_id"),
-        }
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Tavus connection timed out. Please try again.")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=500, detail=f"Connection error: {str(e)}")
+    
+    # Seedha deployment URL return karo
+    deployment_url = f"https://maker.tavus.io/deployments/{os.getenv('TAVUS_DEPLOYMENT_ID')}"
+    
+    return {
+        "conversation_url": deployment_url,
+        "conversation_id": "deployment",
+    }
 
 
 def _get_authority(user: models.User, db: Session) -> str:
