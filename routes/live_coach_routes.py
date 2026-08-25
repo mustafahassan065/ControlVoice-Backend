@@ -169,7 +169,7 @@ async def start_live_coach_session(
                     "Content-Type": "application/json",
                 },
                 json={
-                    "replica_id": TAVUS_REPLICA_ID,
+                    "persona_id": TAVUS_REPLICA_ID,
                     "conversational_context": conversation_context,
                     "custom_greeting": f"Hi {current_user.name.split()[0]}! I've reviewed your voice data and I'm ready to help you improve. Your Authority Score is {_get_authority(current_user, db)}. Let's work on your biggest opportunity today.",
                     "properties": {
