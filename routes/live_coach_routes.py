@@ -176,7 +176,7 @@ async def start_live_coach_session(
                         "max_call_duration": 1800,  # 30 minutes max
                         "participant_left_timeout": 60,
                         "enable_recording": False,
-                        "apply_conversation_rules": True,
+                        
                     }
                 }
             )
