@@ -937,12 +937,12 @@ def _generate_graphic_b64(
             's3',
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            region_name=os.getenv("AWS_REGION", "us-east-1")
+            region_name='eu-north-1'
         )
         bucket = os.getenv("AWS_BUCKET_NAME")
         key = f"email-graphics/{uuid.uuid4()}.png"
-        s3.put_object(Bucket=bucket, Key=key, Body=img_bytes, ContentType='image/png', ACL='public-read')
-        url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{key}"
+        s3.put_object(Bucket=bucket, Key=key, Body=img_bytes, ContentType='image/png')
+        url = f"https://{bucket}.s3.eu-north-1.amazonaws.com/{key}"
         return url
 
     except Exception as e:
