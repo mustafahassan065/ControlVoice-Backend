@@ -9,7 +9,7 @@ from datetime import datetime
 load_dotenv()
 
 resend.api_key = os.getenv("RESEND_API_KEY")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "coach@voicecontrol.ai")
+FROM_EMAIL = f"Voice Control AI <{os.getenv('FROM_EMAIL', 'info@voicecontrol.tech')}>"
 
 CATEGORY_LABELS = {
     "pause_control":  "Pause Control",
@@ -992,12 +992,15 @@ def send_morning_email(user: models.User, db: Session):
     pace = round(latest_report.pace_score or 0)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
+    pitch = round(latest_report.pitch_score or 0)
+    endings = round(latest_report.ending_score or 0)
+    coaching_status = "★ Great momentum" if authority >= 70 else "★ Keep improving"
     img_url = _generate_graphic_b64(
-        authority_score=weakest_score, center_label=weakest_label.upper()[:9],
-        label_top="Today's Focus", label_bottom="Weakest Area",
-        coaching_title="Morning Blueprint", coaching_sub=f"★ {weakest_label} drill",
-        pace_label="Speaking Rate", score_left_label="Authority Score",
-        score_left_val=f"{authority}/100", score_right_label="Pace Control",
+        authority_score=authority, center_label="AUTHORITY",
+        label_top="Clarity", label_bottom="Resonance",
+        coaching_title="Morning Blueprint", coaching_sub=coaching_status,
+        pace_label="Speaking Rate", score_left_label=weakest_label,
+        score_left_val=f"{weakest_score}/100 ← focus", score_right_label="Pace Control",
         score_right_val=f"{pace}/100", email_type="morning",
     )
 
@@ -1056,13 +1059,15 @@ def send_afternoon_email(user: models.User, db: Session):
     exercise_title = exercise.title if exercise else f"{weakest_label} Exercise"
     exercise_desc = (exercise.instruction[:120] + "...") if exercise and len(exercise.instruction) > 120 else (exercise.instruction if exercise else "")
 
+    coaching_status = "★ Strong authority" if authority >= 70 else "★ Keep pushing"
     img_url = _generate_graphic_b64(
         authority_score=authority, center_label="AUTHORITY",
         label_top="Clarity", label_bottom="Resonance",
-        coaching_title="Real-time Coaching", coaching_sub="★ Optimal steady flow",
+        coaching_title="Real-time Coaching", coaching_sub=coaching_status,
         pace_label="Pace", score_left_label="Pause Control",
-        score_left_val=f"{pause}/100", score_right_label="Strong Endings",
-        score_right_val=f"{endings}/100", email_type="afternoon",
+        score_left_val=f"{pause}/100", score_right_label=weakest_label,
+        score_right_val=f"{endings}/100 ← focus" if weakest_key == "strong_endings" else f"{weakest_score}/100 ← focus",
+        email_type="afternoon",
     )
 
     subject = f"Voice Control AI — Score Report · Authority {authority}/100"
@@ -1116,11 +1121,12 @@ def send_evening_email(user: models.User, db: Session):
     weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
+    coaching_status = f"★ +{improvement} points today" if improvement > 0 else "★ Stay consistent"
     img_url = _generate_graphic_b64(
-        authority_score=authority_now, center_label="TODAY",
-        label_top="Improvement", label_bottom="Progress",
+        authority_score=authority_now, center_label="AUTHORITY",
+        label_top="Today", label_bottom="Progress",
         coaching_title="Daily Progress Review",
-        coaching_sub=f"★ {'Strong improvement' if improvement > 0 else 'Keep going'} today",
+        coaching_sub=coaching_status,
         pace_label="Pace", score_left_label="Authority Score",
         score_left_val=f"{authority_prev} → {authority_now}",
         score_right_label="Pause Control",
