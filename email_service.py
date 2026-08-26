@@ -1056,12 +1056,13 @@ def send_afternoon_email(user: models.User, db: Session):
         return False
 
     weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest_report)
-    confidence = round(latest_report.confidence_score or 0)
-    presence = round(latest_report.presence_score or 0)
-    leadership = round(latest_report.leadership_score or 0)
     authority = round(latest_report.authority_score)
     pause = round(latest_report.pause_score or 0)
     endings = round(latest_report.ending_score or 0)
+    confidence = round(latest_report.confidence_score or 0)
+    presence = round(latest_report.presence_score or 0)
+    leadership = round(latest_report.leadership_score or 0)
+    coaching_status = "★ Strong authority" if authority >= 70 else "★ Keep pushing"
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
     exercises_url = f"{frontend_url}/exercises?category={weakest_key}"
 
@@ -1071,8 +1072,8 @@ def send_afternoon_email(user: models.User, db: Session):
 
     img_url = _generate_graphic_b64(
         authority_score=authority, center_label="AUTHORITY",
-        label_top="Clarity", label_bottom="Resonance",
-        coaching_title="Real-time Coaching", coaching_sub="★ Optimal steady flow",
+        label_top="Clarity", label_bottom="",
+        coaching_title="Real-time Coaching", coaching_sub=coaching_status,
         pace_label="Pace",
         score_left_val=f"{authority}/100",
         score_confidence=f"{confidence}/100",
