@@ -1056,6 +1056,9 @@ def send_afternoon_email(user: models.User, db: Session):
         return False
 
     weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest_report)
+    confidence = round(latest_report.confidence_score or 0)
+    presence = round(latest_report.presence_score or 0)
+    leadership = round(latest_report.leadership_score or 0)
     authority = round(latest_report.authority_score)
     pause = round(latest_report.pause_score or 0)
     endings = round(latest_report.ending_score or 0)
