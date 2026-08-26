@@ -13,198 +13,137 @@ load_dotenv()
 
 
 def generate_score_graphic(
-    authority_score: int,
+    authority_score: int = 87,
+    center_label: str = "AUTHORITY",
     label_top: str = "Clarity",
     label_bottom: str = "Resonance",
-    center_label: str = "AUTHORITY",
+    coaching_title: str = "Real-time Coaching",
+    coaching_sub: str = "★ Optimal steady flow",
+    pace_label: str = "Pace",
     score_left_label: str = "Pause Control",
     score_left_val: str = "72/100",
     score_right_label: str = "Strong Endings",
     score_right_val: str = "54/100",
-    coaching_title: str = "Real-time Coaching",
-    coaching_sub: str = "★ Optimal steady flow",
-    pace_label: str = "Pace",
-    email_type: str = "afternoon",  # morning, afternoon, evening
-    prev_score: int = None,         # for evening — before arc
+    prev_score: int = None,
+    email_type: str = "afternoon",
 ) -> bytes:
-    """
-    Generate exactly same graphic as the image — C-shape arc, inner circle, pace waveform.
-    Returns PNG bytes.
-    """
 
-    fig, ax = plt.subplots(1, 1, figsize=(7.2, 3.4))
-    fig.patch.set_facecolor('#FDFCF8')
+    fig = plt.figure(figsize=(7.5, 3.5), facecolor='#FDFCF8')
+    ax = fig.add_axes([0, 0, 1, 1])
     ax.set_facecolor('#FDFCF8')
-    ax.set_xlim(0, 7.2)
-    ax.set_ylim(0, 3.4)
+    ax.set_xlim(0, 7.5)
+    ax.set_ylim(0, 3.5)
     ax.axis('off')
 
-    # ── LEFT SIDE: C-shape arc ──────────────────────────────
+    cx, cy, r = 1.9, 1.75, 1.38
 
-    cx, cy, r = 1.9, 1.7, 1.45  # center x, y, radius
-
-    # C-arc = 270 degrees (open on right side, -225 to 45 degrees)
-    # Score fills the arc proportionally
-    start_angle = -225
-    full_sweep = 270
-
-    # If evening — draw previous arc faint first
+    # Evening: faint before arc
     if email_type == "evening" and prev_score is not None:
-        prev_sweep = (prev_score / 100) * full_sweep
-        prev_arc = patches.Arc(
-            (cx, cy), 2 * r, 2 * r,
-            angle=0,
-            theta1=start_angle,
-            theta2=start_angle + prev_sweep,
-            color='#DEDAD2', linewidth=3.5, solid_capstyle='round'
-        )
-        ax.add_patch(prev_arc)
+        theta_prev = np.linspace(
+            np.radians(-225 + 270 * (prev_score / 100)),
+            np.radians(-225), 300)
+        ax.plot(cx + r * np.cos(theta_prev), cy + r * np.sin(theta_prev),
+                color='#DEDAD2', linewidth=4, solid_capstyle='round')
 
-    # Main score arc
-    score_sweep = (authority_score / 100) * full_sweep
-    main_arc = patches.Arc(
-        (cx, cy), 2 * r, 2 * r,
-        angle=0,
-        theta1=start_angle,
-        theta2=start_angle + score_sweep,
-        color='#1A1A1B', linewidth=4.5, solid_capstyle='round'
-    )
-    ax.add_patch(main_arc)
+    # Main arc using plot (not patches.Arc) — avoids solid_capstyle issue
+    theta = np.linspace(
+        np.radians(-225 + 270 * (authority_score / 100)),
+        np.radians(-225), 300)
+    ax.plot(cx + r * np.cos(theta), cy + r * np.sin(theta),
+            color='#1A1A1B', linewidth=5, solid_capstyle='round')
 
     # Inner circle
-    inner_circle = plt.Circle((cx, cy), 0.48, color='#F5F3EF', zorder=3)
-    ax.add_patch(inner_circle)
-    inner_border = plt.Circle((cx, cy), 0.48, fill=False, edgecolor='#DEDAD2', linewidth=1, zorder=4)
-    ax.add_patch(inner_border)
+    ax.add_patch(plt.Circle((cx, cy), 0.46, color='#F5F3EF', zorder=3))
+    ax.add_patch(plt.Circle((cx, cy), 0.46, fill=False,
+                             edgecolor='#DEDAD2', linewidth=1.2, zorder=4))
 
-    # Score number center
-    ax.text(cx, cy + 0.06, str(authority_score),
-            ha='center', va='center', fontsize=26, fontweight='normal',
-            color='#1A1A1B', zorder=5)
+    ax.text(cx, cy + 0.22, center_label, ha='center', va='center',
+            fontsize=6, color='#9A9890', zorder=5)
+    ax.text(cx, cy - 0.08, str(authority_score), ha='center', va='center',
+            fontsize=28, color='#1A1A1B', zorder=5)
+    ax.text(cx, cy + r + 0.18, label_top, ha='center', fontsize=9, color='#4A4840')
+    ax.text(cx, cy - r - 0.18, label_bottom, ha='center', fontsize=9, color='#4A4840')
 
-    # Center label above number
-    ax.text(cx, cy + 0.26, center_label,
-            ha='center', va='center', fontsize=6.5, color='#9A9890',
-            fontweight='normal', zorder=5, letter_spacing=None)
+    # Coaching box
+    ax.add_patch(patches.FancyBboxPatch(
+        (3.4, 2.62), 3.8, 0.62,
+        boxstyle="round,pad=0.08", facecolor='#F0EDE6', edgecolor='none'))
+    ax.text(3.58, 2.98, coaching_title, fontsize=8, color='#4A4840', fontweight='semibold')
+    ax.text(3.58, 2.74, coaching_sub, fontsize=8, color='#8A7A60')
 
-    # Top label (Clarity)
-    ax.text(cx, cy + r + 0.18, label_top,
-            ha='center', va='bottom', fontsize=8, color='#4A4840')
+    ax.text(3.4, 2.28, pace_label, fontsize=9, color='#4A4840')
 
-    # Bottom label (Resonance)
-    ax.text(cx, cy - r - 0.18, label_bottom,
-            ha='center', va='top', fontsize=8, color='#4A4840')
+    # Waveform
+    wx = np.linspace(3.4, 7.2, 80)
+    wy1 = 1.82 + 0.12 * np.sin(wx * 3.8) + 0.05 * np.sin(wx * 7.5)
+    wy2 = 1.75 + 0.14 * np.sin(wx * 3.8 + 0.5) + 0.06 * np.sin(wx * 7.5 + 0.4)
+    ax.plot(wx, wy1, color='#DEDAD2', linewidth=1.8, solid_capstyle='round')
+    ax.plot(wx, wy2, color='#1A1A1B', linewidth=2.5, solid_capstyle='round')
+    ax.plot(wx[45], wy2[45], 'o', color='#1A1A1B', markersize=6, zorder=5)
 
-    # ── RIGHT SIDE: Coaching box + waveform ─────────────────
+    ax.text(3.4, 1.28, score_left_label, fontsize=8, color='#9A9890')
+    ax.text(3.4, 1.06, score_left_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
+    ax.text(5.4, 1.28, score_right_label, fontsize=8, color='#9A9890')
+    ax.text(5.4, 1.06, score_right_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
 
-    box_x, box_y = 3.55, 2.55
-    box_w, box_h = 3.4, 0.62
-
-    # Coaching box background
-    box = patches.FancyBboxPatch(
-        (box_x, box_y), box_w, box_h,
-        boxstyle="round,pad=0.06",
-        facecolor='#F0EDE6', edgecolor='none'
-    )
-    ax.add_patch(box)
-
-    ax.text(box_x + 0.18, box_y + 0.42, coaching_title,
-            fontsize=7.5, color='#4A4840', fontweight='semibold', va='center')
-    ax.text(box_x + 0.18, box_y + 0.18, coaching_sub,
-            fontsize=7.5, color='#8A7A60', va='center')
-
-    # Pace label
-    ax.text(3.55, 2.15, pace_label,
-            fontsize=8, color='#4A4840', va='center')
-
-    # Pace waveform — two lines
-    wave_x = np.linspace(3.55, 6.9, 60)
-
-    # Back line (faint)
-    wave_y_back = 1.78 + 0.13 * np.sin(wave_x * 3.8) + 0.06 * np.sin(wave_x * 7.2)
-    ax.plot(wave_x, wave_y_back, color='#DEDAD2', linewidth=1.5, solid_capstyle='round')
-
-    # Front line (bold) — slightly different phase
-    wave_y_front = 1.72 + 0.15 * np.sin(wave_x * 3.8 + 0.4) + 0.07 * np.sin(wave_x * 7.2 + 0.3)
-    ax.plot(wave_x, wave_y_front, color='#1A1A1B', linewidth=2.2, solid_capstyle='round')
-
-    # Dot on waveform
-    mid_idx = 35
-    ax.plot(wave_x[mid_idx], wave_y_front[mid_idx], 'o',
-            color='#1A1A1B', markersize=5, zorder=5)
-
-    # Score labels below waveform
-    ax.text(3.55, 1.28, score_left_label,
-            fontsize=7.5, color='#9A9890', va='center')
-    ax.text(3.55, 1.06, score_left_val,
-            fontsize=8, color='#1A1A1B', fontweight='semibold', va='center')
-
-    ax.text(5.42, 1.28, score_right_label,
-            fontsize=7.5, color='#9A9890', va='center')
-    ax.text(5.42, 1.06, score_right_val,
-            fontsize=8, color='#1A1A1B', fontweight='semibold', va='center')
-
-    # Save to bytes
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight',
-                facecolor='#FDFCF8', edgecolor='none')
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#FDFCF8')
     buf.seek(0)
-    plt.close(fig)
-    return buf.read()
+    img_bytes = buf.read()
+    plt.close()
+    return img_bytes
 
 
 def upload_image_to_s3(image_bytes: bytes, filename: str = None) -> str:
-    """Upload PNG to S3 and return public URL"""
     s3_client = boto3.client(
         's3',
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION", "us-east-1")
+        region_name=os.getenv("AWS_REGION", "eu-north-1")
     )
     bucket = os.getenv("AWS_BUCKET_NAME")
     if not filename:
-        filename = f"email_graphics/{uuid.uuid4()}.png"
+        filename = f"email-graphics/{uuid.uuid4()}.png"
 
     s3_client.put_object(
         Bucket=bucket,
         Key=filename,
         Body=image_bytes,
         ContentType='image/png',
-        CacheControl='max-age=86400',
     )
-    url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{filename}"
+    region = os.getenv("AWS_REGION", "eu-north-1")
+    url = f"https://{bucket}.s3.{region}.amazonaws.com/{filename}"
     return url
 
 
 def generate_and_upload(
-    authority_score: int,
+    authority_score: int = 87,
+    center_label: str = "AUTHORITY",
     label_top: str = "Clarity",
     label_bottom: str = "Resonance",
-    center_label: str = "AUTHORITY",
+    coaching_title: str = "Real-time Coaching",
+    coaching_sub: str = "★ Optimal steady flow",
+    pace_label: str = "Pace",
     score_left_label: str = "Pause Control",
     score_left_val: str = "72/100",
     score_right_label: str = "Strong Endings",
     score_right_val: str = "54/100",
-    coaching_title: str = "Real-time Coaching",
-    coaching_sub: str = "★ Optimal steady flow",
-    pace_label: str = "Pace",
-    email_type: str = "afternoon",
     prev_score: int = None,
+    email_type: str = "afternoon",
 ) -> str:
-    """Generate image and upload to S3, return URL"""
     img_bytes = generate_score_graphic(
         authority_score=authority_score,
+        center_label=center_label,
         label_top=label_top,
         label_bottom=label_bottom,
-        center_label=center_label,
+        coaching_title=coaching_title,
+        coaching_sub=coaching_sub,
+        pace_label=pace_label,
         score_left_label=score_left_label,
         score_left_val=score_left_val,
         score_right_label=score_right_label,
         score_right_val=score_right_val,
-        coaching_title=coaching_title,
-        coaching_sub=coaching_sub,
-        pace_label=pace_label,
-        email_type=email_type,
         prev_score=prev_score,
+        email_type=email_type,
     )
     return upload_image_to_s3(img_bytes)
