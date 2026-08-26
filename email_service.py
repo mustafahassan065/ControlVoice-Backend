@@ -9,7 +9,7 @@ from datetime import datetime
 load_dotenv()
 
 resend.api_key = os.getenv("RESEND_API_KEY")
-FROM_EMAIL = f"Voice Control AI <{os.getenv('FROM_EMAIL', 'info@voicecontrol.tech')}>"
+FROM_EMAIL = os.getenv("FROM_EMAIL", "coach@voicecontrol.ai")
 
 CATEGORY_LABELS = {
     "pause_control":  "Pause Control",
@@ -871,10 +871,13 @@ def _generate_graphic_b64(
     coaching_title="Real-time Coaching",
     coaching_sub="★ Optimal steady flow",
     pace_label="Pace",
-    score_left_label="Pause Control",
-    score_left_val="72/100",
-    score_right_label="Strong Endings",
-    score_right_val="54/100",
+    score_left_label="Authority",
+    score_left_val="87/100",
+    score_right_label="Confidence",
+    score_right_val="80/100",
+    score_confidence="80/100",
+    score_presence="75/100",
+    score_leadership="72/100",
     prev_score=None,
     email_type="afternoon"
 ) -> str:
@@ -907,7 +910,7 @@ def _generate_graphic_b64(
         ax.text(cx, cy+0.22, center_label, ha='center', va='center', fontsize=6, color='#9A9890', zorder=5)
         ax.text(cx, cy-0.08, str(authority_score), ha='center', va='center', fontsize=28, color='#1A1A1B', zorder=5)
         ax.text(cx, cy+r+0.18, label_top, ha='center', fontsize=9, color='#4A4840')
-        ax.text(cx, cy-r-0.18, label_bottom, ha='center', fontsize=9, color='#4A4840')
+        # bottom label removed
 
         ax.add_patch(patches.FancyBboxPatch((3.4, 2.62), 3.8, 0.62, boxstyle="round,pad=0.08", facecolor='#F0EDE6', edgecolor='none'))
         ax.text(3.58, 2.98, coaching_title, fontsize=8, color='#4A4840', fontweight='semibold')
@@ -921,10 +924,14 @@ def _generate_graphic_b64(
         ax.plot(wx, wy2, color='#1A1A1B', linewidth=2.5, solid_capstyle='round')
         ax.plot(wx[45], wy2[45], 'o', color='#1A1A1B', markersize=6, zorder=5)
 
-        ax.text(3.4, 1.28, score_left_label, fontsize=8, color='#9A9890')
-        ax.text(3.4, 1.06, score_left_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
-        ax.text(5.4, 1.28, score_right_label, fontsize=8, color='#9A9890')
-        ax.text(5.4, 1.06, score_right_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
+        ax.text(3.4, 1.55, "Authority", fontsize=7.5, color='#9A9890')
+        ax.text(3.4, 1.36, score_left_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
+        ax.text(4.85, 1.55, "Confidence", fontsize=7.5, color='#9A9890')
+        ax.text(4.85, 1.36, score_confidence, fontsize=9, color='#1A1A1B', fontweight='semibold')
+        ax.text(3.4, 1.00, "Presence", fontsize=7.5, color='#9A9890')
+        ax.text(3.4, 0.81, score_presence, fontsize=9, color='#1A1A1B', fontweight='semibold')
+        ax.text(4.85, 1.00, "Leadership", fontsize=7.5, color='#9A9890')
+        ax.text(4.85, 0.81, score_leadership, fontsize=9, color='#1A1A1B', fontweight='semibold')
 
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#FDFCF8')
@@ -937,12 +944,12 @@ def _generate_graphic_b64(
             's3',
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            region_name='eu-north-1'
+            region_name=os.getenv("AWS_REGION", "us-east-1")
         )
         bucket = os.getenv("AWS_BUCKET_NAME")
         key = f"email-graphics/{uuid.uuid4()}.png"
-        s3.put_object(Bucket=bucket, Key=key, Body=img_bytes, ContentType='image/png')
-        url = f"https://{bucket}.s3.eu-north-1.amazonaws.com/{key}"
+        s3.put_object(Bucket=bucket, Key=key, Body=img_bytes, ContentType='image/png', ACL='public-read')
+        url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{key}"
         return url
 
     except Exception as e:
@@ -992,16 +999,16 @@ def send_morning_email(user: models.User, db: Session):
     pace = round(latest_report.pace_score or 0)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
-    pitch = round(latest_report.pitch_score or 0)
-    endings = round(latest_report.ending_score or 0)
-    coaching_status = "★ Great momentum" if authority >= 70 else "★ Keep improving"
     img_url = _generate_graphic_b64(
-        authority_score=authority, center_label="AUTHORITY",
-        label_top="Clarity", label_bottom="Resonance",
-        coaching_title="Morning Blueprint", coaching_sub=coaching_status,
-        pace_label="Speaking Rate", score_left_label=weakest_label,
-        score_left_val=f"{weakest_score}/100 ← focus", score_right_label="Pace Control",
-        score_right_val=f"{pace}/100", email_type="morning",
+        authority_score=weakest_score, center_label=weakest_label.upper()[:9],
+        label_top="Today's Focus", label_bottom="Weakest Area",
+        coaching_title="Morning Blueprint", coaching_sub=f"★ {weakest_label} drill",
+        pace_label="Speaking Rate",
+        score_left_val=f"{authority}/100",
+        score_confidence=f"{confidence}/100",
+        score_presence=f"{presence}/100",
+        score_leadership=f"{leadership}/100",
+        email_type="morning",
     )
 
     script_html = script.replace("[PAUSE]",
@@ -1059,14 +1066,15 @@ def send_afternoon_email(user: models.User, db: Session):
     exercise_title = exercise.title if exercise else f"{weakest_label} Exercise"
     exercise_desc = (exercise.instruction[:120] + "...") if exercise and len(exercise.instruction) > 120 else (exercise.instruction if exercise else "")
 
-    coaching_status = "★ Strong authority" if authority >= 70 else "★ Keep pushing"
     img_url = _generate_graphic_b64(
         authority_score=authority, center_label="AUTHORITY",
         label_top="Clarity", label_bottom="Resonance",
-        coaching_title="Real-time Coaching", coaching_sub=coaching_status,
-        pace_label="Pace", score_left_label="Pause Control",
-        score_left_val=f"{pause}/100", score_right_label=weakest_label,
-        score_right_val=f"{endings}/100 ← focus" if weakest_key == "strong_endings" else f"{weakest_score}/100 ← focus",
+        coaching_title="Real-time Coaching", coaching_sub="★ Optimal steady flow",
+        pace_label="Pace",
+        score_left_val=f"{authority}/100",
+        score_confidence=f"{confidence}/100",
+        score_presence=f"{presence}/100",
+        score_leadership=f"{leadership}/100",
         email_type="afternoon",
     )
 
@@ -1121,16 +1129,16 @@ def send_evening_email(user: models.User, db: Session):
     weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest)
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
-    coaching_status = f"★ +{improvement} points today" if improvement > 0 else "★ Stay consistent"
     img_url = _generate_graphic_b64(
-        authority_score=authority_now, center_label="AUTHORITY",
-        label_top="Today", label_bottom="Progress",
+        authority_score=authority_now, center_label="TODAY",
+        label_top="Improvement", label_bottom="Progress",
         coaching_title="Daily Progress Review",
-        coaching_sub=coaching_status,
-        pace_label="Pace", score_left_label="Authority Score",
+        coaching_sub=f"★ {'Strong improvement' if improvement > 0 else 'Keep going'} today",
+        pace_label="Pace",
         score_left_val=f"{authority_prev} → {authority_now}",
-        score_right_label="Pause Control",
-        score_right_val=f"{pause_prev} → {pause_now}",
+        score_confidence=f"{confidence_prev} → {confidence_now}",
+        score_presence=f"{presence_prev} → {presence_now}",
+        score_leadership=f"{leadership_prev} → {leadership_now}",
         email_type="evening", prev_score=authority_prev,
     )
 
