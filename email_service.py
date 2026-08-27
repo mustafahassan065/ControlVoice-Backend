@@ -9,7 +9,7 @@ from datetime import datetime
 load_dotenv()
 
 resend.api_key = os.getenv("RESEND_API_KEY")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "coach@voicecontrol.ai")
+FROM_EMAIL = f"Voice Control AI <{os.getenv('FROM_EMAIL', 'info@voicecontrol.tech')}>"
 
 CATEGORY_LABELS = {
     "pause_control":  "Pause Control",
@@ -861,107 +861,10 @@ def send_exercise_recommendation_email(user: models.User, db: Session):
         print(f"Exercise recommendation email error: {e}")
         return False
 
-# ═══ GRAPHIC GENERATOR — S3 hosted ═══
 
-def _generate_graphic_b64(
-    authority_score=87,
-    center_label="AUTHORITY",
-    label_top="Clarity",
-    label_bottom="Resonance",
-    coaching_title="Real-time Coaching",
-    coaching_sub="★ Optimal steady flow",
-    pace_label="Pace",
-    score_left_label="Authority",
-    score_left_val="87/100",
-    score_right_label="Confidence",
-    score_right_val="80/100",
-    score_confidence="80/100",
-    score_presence="75/100",
-    score_leadership="72/100",
-    prev_score=None,
-    email_type="afternoon"
-) -> str:
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        import matplotlib.patches as patches
-        import numpy as np
-        import io, base64, boto3, uuid
-
-        fig = plt.figure(figsize=(7.5, 3.5), facecolor='#FDFCF8')
-        ax = fig.add_axes([0, 0, 1, 1])
-        ax.set_facecolor('#FDFCF8')
-        ax.set_xlim(0, 7.5)
-        ax.set_ylim(0, 3.5)
-        ax.axis('off')
-
-        cx, cy, r = 1.9, 1.75, 1.38
-
-        if email_type == "evening" and prev_score is not None:
-            theta_prev = np.linspace(np.radians(-225 + 270*(prev_score/100)), np.radians(-225), 300)
-            ax.plot(cx + r*np.cos(theta_prev), cy + r*np.sin(theta_prev), color='#DEDAD2', linewidth=4, solid_capstyle='round')
-
-        theta = np.linspace(np.radians(-225 + 270*(authority_score/100)), np.radians(-225), 300)
-        ax.plot(cx + r*np.cos(theta), cy + r*np.sin(theta), color='#1A1A1B', linewidth=5, solid_capstyle='round')
-
-        ax.add_patch(plt.Circle((cx, cy), 0.46, color='#F5F3EF', zorder=3))
-        ax.add_patch(plt.Circle((cx, cy), 0.46, fill=False, edgecolor='#DEDAD2', linewidth=1.2, zorder=4))
-        ax.text(cx, cy+0.22, center_label, ha='center', va='center', fontsize=6, color='#9A9890', zorder=5)
-        ax.text(cx, cy-0.08, str(authority_score), ha='center', va='center', fontsize=28, color='#1A1A1B', zorder=5)
-        ax.text(cx, cy+r+0.18, label_top, ha='center', fontsize=9, color='#4A4840')
-        # bottom label removed
-
-        ax.add_patch(patches.FancyBboxPatch((3.4, 2.62), 3.8, 0.62, boxstyle="round,pad=0.08", facecolor='#F0EDE6', edgecolor='none'))
-        ax.text(3.58, 2.98, coaching_title, fontsize=8, color='#4A4840', fontweight='semibold')
-        ax.text(3.58, 2.74, coaching_sub, fontsize=8, color='#8A7A60')
-        ax.text(3.4, 2.28, pace_label, fontsize=9, color='#4A4840')
-
-        wx = np.linspace(3.4, 7.2, 80)
-        wy1 = 1.82 + 0.12*np.sin(wx*3.8) + 0.05*np.sin(wx*7.5)
-        wy2 = 1.75 + 0.14*np.sin(wx*3.8+0.5) + 0.06*np.sin(wx*7.5+0.4)
-        ax.plot(wx, wy1, color='#DEDAD2', linewidth=1.8, solid_capstyle='round')
-        ax.plot(wx, wy2, color='#1A1A1B', linewidth=2.5, solid_capstyle='round')
-        ax.plot(wx[45], wy2[45], 'o', color='#1A1A1B', markersize=6, zorder=5)
-
-        ax.text(3.4, 1.55, "Authority", fontsize=7.5, color='#9A9890')
-        ax.text(3.4, 1.36, score_left_val, fontsize=9, color='#1A1A1B', fontweight='semibold')
-        ax.text(4.85, 1.55, "Confidence", fontsize=7.5, color='#9A9890')
-        ax.text(4.85, 1.36, score_confidence, fontsize=9, color='#1A1A1B', fontweight='semibold')
-        ax.text(3.4, 1.00, "Presence", fontsize=7.5, color='#9A9890')
-        ax.text(3.4, 0.81, score_presence, fontsize=9, color='#1A1A1B', fontweight='semibold')
-        ax.text(4.85, 1.00, "Leadership", fontsize=7.5, color='#9A9890')
-        ax.text(4.85, 0.81, score_leadership, fontsize=9, color='#1A1A1B', fontweight='semibold')
-
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#FDFCF8')
-        buf.seek(0)
-        img_bytes = buf.read()
-        plt.close()
-
-        # Upload to S3
-        s3 = boto3.client(
-            's3',
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            region_name=os.getenv("AWS_REGION", "us-east-1")
-        )
-        bucket = os.getenv("AWS_BUCKET_NAME")
-        key = f"email-graphics/{uuid.uuid4()}.png"
-        s3.put_object(Bucket=bucket, Key=key, Body=img_bytes, ContentType='image/png', ACL='public-read')
-        url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'us-east-1')}.amazonaws.com/{key}"
-        return url
-
-    except Exception as e:
-        print(f"Graphic generation error: {e}")
-        return None
-
-
-def _graphic_img_tag(url: str) -> str:
-    if not url:
-        return ""
-    return f'<img src="{url}" alt="Voice Score Graphic" style="width:100%;max-width:520px;display:block;margin:0 auto;" width="520"/>'
-
+# ════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ════════════════════════════════════════════════════════════
 
 def _get_weakest(latest_report) -> tuple:
     scores = {
@@ -977,200 +880,497 @@ def _get_weakest(latest_report) -> tuple:
         "pitch_movement": "Pitch Movement",
         "pace_control":   "Pace Control",
     }
-    scripts = {
-        "pause_control":  "The most important thing [PAUSE] about clear communication [DOWN] is not what you say — but how deliberately you say it.",
-        "strong_endings": "I am confident in this decision [DOWN]. The plan is clear [DOWN]. We move forward today [DOWN].",
-        "pitch_movement": "This idea WILL work. The results SPEAK for themselves. Let me show you WHY.",
-        "pace_control":   "Take your time. Speak clearly. Make every word count. Pause between your thoughts.",
-    }
-    return weakest_key, round(scores[weakest_key]), labels[weakest_key], scripts.get(weakest_key, "")
+    return weakest_key, round(scores[weakest_key]), labels[weakest_key]
 
+
+def _upload_gif_to_s3(local_path: str, s3_key: str) -> str:
+    """Upload GIF to S3 and return URL"""
+    try:
+        import boto3
+        s3 = boto3.client('s3',
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name='eu-north-1'
+        )
+        bucket = os.getenv("AWS_BUCKET_NAME")
+        with open(local_path, 'rb') as f:
+            s3.put_object(Bucket=bucket, Key=s3_key, Body=f.read(), ContentType='image/gif')
+        return f"https://{bucket}.s3.eu-north-1.amazonaws.com/{s3_key}"
+    except Exception as e:
+        print(f"GIF upload error: {e}")
+        return None
+
+
+def _get_gif_urls() -> dict:
+    """Get or upload GIFs to S3"""
+    import os as _os
+    base = _os.path.dirname(_os.path.abspath(__file__))
+    waveform_path = _os.path.join(base, 'waveform.gif')
+    mic_path = _os.path.join(base, 'mic_pulse.gif')
+    return {
+        "waveform": _upload_gif_to_s3(waveform_path, 'email-assets/waveform.gif'),
+        "mic": _upload_gif_to_s3(mic_path, 'email-assets/mic_pulse.gif'),
+    }
+
+
+def _generate_ai_message(user_context: dict, email_type: str) -> dict:
+    """Generate personalized teacher message using OpenAI"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        time_context = {
+            "morning": "This is the morning email. Tone: motivating, energizing, forward-looking. Help them prepare for the day.",
+            "afternoon": "This is the afternoon email. Tone: challenging, focused, mid-day energy. Push them to apply their skills under pressure.",
+            "evening": "This is the evening email. Tone: reflective, warm, encouraging. Review progress and prepare them for tomorrow."
+        }
+
+        inactive_note = ""
+        if user_context.get("days_inactive", 0) >= 3:
+            inactive_note = f"IMPORTANT: This student has been inactive for {user_context['days_inactive']} days. Be gentle and encouraging about coming back, not guilty."
+
+        prompt = f"""You are a warm, intelligent, professional voice coach sending a personalized email.
+{time_context.get(email_type, "")}
+{inactive_note}
+
+Student data:
+- Name: {user_context["name"]}
+- Authority Score: {user_context["authority"]}/100
+- Previous Authority Score: {user_context["prev_authority"]}/100
+- Confidence: {user_context["confidence"]}/100
+- Presence: {user_context["presence"]}/100
+- Leadership: {user_context["leadership"]}/100
+- Weakest area: {user_context["weakest_label"]} ({user_context["weakest_score"]}/100)
+- Practice streak: {user_context["streak"]} days
+- Days inactive: {user_context["days_inactive"]}
+- Main goal: {user_context["goal"]}
+- Recent feedback: {user_context["feedback"]}
+
+Return ONLY valid JSON with these exact keys:
+{{
+  "opening_message": "2-3 sentences. Personal greeting. Mention something specific from their data.",
+  "progress_message": "1-2 sentences. Mention actual improvement or specific weakness naturally.",
+  "listen_sentence": "One short powerful practice sentence matching their weakness.",
+  "practice_sentence": "Same or related sentence for them to practice.",
+  "encouragement": "1 sentence. Warm personal closing.",
+  "closing": "Very short sign-off. Max 10 words."
+}}
+
+Rules:
+- Sound like a caring human teacher, NOT an automated system
+- Reference their actual data naturally
+- Vary the language — do not use generic phrases
+- Keep opening_message under 60 words
+- The listen_sentence and practice_sentence must relate to their weakest area: {user_context["weakest_label"]}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_tokens=600,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        # Clean JSON
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw.strip())
+
+    except Exception as e:
+        print(f"AI message generation error: {e}")
+        # Fallback
+        return {
+            "opening_message": f"Hi {user_context['name'].split()[0]}, your Authority Score is {user_context['authority']}/100. Your {user_context['weakest_label']} needs focus today.",
+            "progress_message": f"Your score improved from {user_context['prev_authority']} to {user_context['authority']}. Keep going.",
+            "listen_sentence": "I speak with clarity, confidence, and intention.",
+            "practice_sentence": "I speak with clarity, confidence, and intention.",
+            "encouragement": "Every practice session moves you forward.",
+            "closing": "Your AI Voice Coach"
+        }
+
+
+def _build_user_context(user: models.User, db: Session) -> dict:
+    """Build full user context for AI message"""
+    latest = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+
+    prev = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).offset(1).first()
+
+    # Streak/inactive
+    from datetime import date
+    last_log = db.query(models.StreakLog).filter(
+        models.StreakLog.user_id == user.id
+    ).order_by(models.StreakLog.activity_date.desc()).first()
+
+    days_inactive = 0
+    streak = 0
+    if last_log:
+        last_date = date.fromisoformat(last_log.activity_date)
+        days_inactive = (date.today() - last_date).days
+        # Count streak
+        all_logs = db.query(models.StreakLog).filter(
+            models.StreakLog.user_id == user.id
+        ).order_by(models.StreakLog.activity_date.desc()).all()
+        streak = len(set(l.activity_date for l in all_logs))
+
+    # Profile/goal
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == user.id
+    ).first()
+    goal = "improving speaking confidence"
+    if profile and profile.goals:
+        try:
+            goals = json.loads(profile.goals)
+            if goals:
+                goal = goals[0]
+        except:
+            goal = str(profile.goals)[:50]
+
+    # Scores
+    authority = round(latest.authority_score) if latest else 0
+    prev_authority = round(prev.authority_score) if prev else authority
+    confidence = round(latest.confidence_score or 0) if latest else 0
+    presence = round(latest.presence_score or 0) if latest else 0
+    leadership = round(latest.leadership_score or 0) if latest else 0
+
+    weakest_key, weakest_score, weakest_label = _get_weakest(latest) if latest else ("pause_control", 0, "Pause Control")
+
+    # Recent feedback
+    feedback = ""
+    if latest and latest.feedback:
+        try:
+            fb = json.loads(latest.feedback)
+            feedback = fb.get("summary", "")[:100]
+        except:
+            feedback = str(latest.feedback)[:100]
+
+    return {
+        "name": user.name,
+        "authority": authority,
+        "prev_authority": prev_authority,
+        "confidence": confidence,
+        "presence": presence,
+        "leadership": leadership,
+        "weakest_key": weakest_key,
+        "weakest_score": weakest_score,
+        "weakest_label": weakest_label,
+        "streak": streak,
+        "days_inactive": days_inactive,
+        "goal": goal,
+        "feedback": feedback,
+    }
+
+
+def _generate_secure_token(user_id: int, extra: dict = None) -> str:
+    """Generate JWT token for deep links"""
+    try:
+        import jwt as pyjwt
+        from datetime import datetime, timedelta
+        payload = {
+            "user_id": user_id,
+            "exp": datetime.utcnow() + timedelta(days=7),
+            **(extra or {})
+        }
+        return pyjwt.encode(payload, os.getenv("SECRET_KEY", "secret"), algorithm="HS256")
+    except Exception as e:
+        print(f"Token error: {e}")
+        return str(user_id)
+
+
+def _build_email_html(
+    user_name: str,
+    ai_content: dict,
+    gifs: dict,
+    frontend_url: str,
+    token: str,
+    exercise_id: int = None,
+    email_type: str = "morning"
+) -> str:
+    """Build complete email HTML"""
+
+    first_name = user_name.split()[0]
+    waveform_url = gifs.get("waveform") or ""
+    mic_url = gifs.get("mic") or ""
+
+    listen_url = f"{frontend_url}/coach?mode=listen&token={token}"
+    practice_url = f"{frontend_url}/coach?mode=practice&token={token}"
+    if exercise_id:
+        practice_url += f"&exercise_id={exercise_id}"
+    conversation_url = f"{frontend_url}/live-coach?token={token}"
+
+    time_labels = {
+        "morning": ("🌅", "Morning Session"),
+        "afternoon": ("☀️", "Afternoon Challenge"),
+        "evening": ("🌆", "Evening Review"),
+    }
+    emoji, time_label = time_labels.get(email_type, ("🎙️", "Voice Coaching"))
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#F8F7F4;font-family:'Inter',Georgia,Arial,sans-serif;">
+<div style="max-width:580px;margin:0 auto;background:#FFFFFF;border-radius:12px;overflow:hidden;margin-top:20px;margin-bottom:20px;box-shadow:0 2px 12px rgba(0,0,0,0.06);">
+
+  <!-- HEADER -->
+  <div style="background:#FFFFFF;padding:28px 32px 0;border-bottom:1px solid #F0EDE8;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div>
+        <p style="margin:0;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:#9A9890;font-weight:600;">Voice Control AI</p>
+        <p style="margin:4px 0 0;font-size:13px;color:#6A6860;">{emoji} {time_label}</p>
+      </div>
+      {'<img src="' + waveform_url + '" alt="" width="80" height="30" style="display:block;">' if waveform_url else ''}
+    </div>
+  </div>
+
+  <!-- TEACHER MESSAGE -->
+  <div style="padding:28px 32px 24px;background:#FFFFFF;">
+    <h2 style="font-family:Georgia,serif;font-size:22px;font-weight:700;color:#1A1A1B;margin:0 0 16px;line-height:1.3;">
+      Hi {first_name},
+    </h2>
+    <p style="font-size:15px;color:#2C2A28;line-height:1.75;margin:0 0 12px;">
+      {ai_content.get("opening_message", "")}
+    </p>
+    <p style="font-size:14px;color:#5A5856;line-height:1.7;margin:0;">
+      {ai_content.get("progress_message", "")}
+    </p>
+  </div>
+
+  <!-- DIVIDER -->
+  <div style="height:1px;background:#F0EDE8;margin:0 32px;"></div>
+
+  <!-- LISTEN SENTENCE -->
+  <div style="padding:24px 32px;background:#FAFAF8;">
+    <p style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 12px;">Listen to this sentence</p>
+    <div style="background:#FFFFFF;border:1px solid #E8E4DC;border-radius:10px;padding:18px 20px;margin-bottom:16px;">
+      <p style="font-family:Georgia,serif;font-size:17px;color:#1A1A1B;font-style:italic;margin:0;line-height:1.6;">
+        &ldquo;{ai_content.get("listen_sentence", "I speak with clarity, confidence, and intention.")}&rdquo;
+      </p>
+    </div>
+    <div style="text-align:center;">
+      <a href="{listen_url}" style="display:inline-block;background:#1A1A1B;color:#FFFFFF;padding:12px 28px;border-radius:30px;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:0.02em;">
+        {'<img src="' + mic_url + '" alt="" width="16" height="16" style="vertical-align:middle;margin-right:6px;">' if mic_url else '🎧'} Listen to Coach
+      </a>
+    </div>
+  </div>
+
+  <!-- PRACTICE SENTENCE -->
+  <div style="padding:24px 32px;background:#FFFFFF;">
+    <p style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 12px;">Now say it yourself</p>
+    <div style="background:#F5F3EF;border:1px solid #E8E4DC;border-radius:10px;padding:18px 20px;margin-bottom:16px;">
+      <p style="font-family:Georgia,serif;font-size:17px;color:#1A1A1B;font-style:italic;margin:0;line-height:1.6;">
+        &ldquo;{ai_content.get("practice_sentence", "I speak with clarity, confidence, and intention.")}&rdquo;
+      </p>
+    </div>
+    <div style="text-align:center;">
+      <a href="{practice_url}" style="display:inline-block;background:#1A1A1B;color:#FFFFFF;padding:12px 28px;border-radius:30px;font-size:13px;font-weight:600;text-decoration:none;">
+        🎙️ Practice This Sentence
+      </a>
+    </div>
+  </div>
+
+  <!-- DIVIDER -->
+  <div style="height:1px;background:#F0EDE8;margin:0 32px;"></div>
+
+  <!-- ENCOURAGEMENT -->
+  <div style="padding:24px 32px;background:#FAFAF8;">
+    <p style="font-size:14px;color:#5A5856;line-height:1.7;margin:0 0 20px;font-style:italic;">
+      {ai_content.get("encouragement", "")}
+    </p>
+
+    <!-- TALK TO AI COACH BUTTON -->
+    <div style="background:#1A1A1B;border-radius:12px;padding:20px 24px;text-align:center;">
+      <p style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.5);margin:0 0 8px;font-weight:600;">Live Session</p>
+      <p style="font-size:15px;color:#FFFFFF;font-weight:600;margin:0 0 14px;">Talk to Your AI Voice Coach</p>
+      <a href="{conversation_url}" style="display:inline-block;background:#FFFFFF;color:#1A1A1B;padding:11px 26px;border-radius:30px;font-size:13px;font-weight:700;text-decoration:none;">
+        🎓 Start Live Session
+      </a>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="padding:20px 32px;background:#FFFFFF;border-top:1px solid #F0EDE8;text-align:center;">
+    <p style="font-size:12px;color:#9A9890;margin:0 0 4px;">{ai_content.get("closing", "Your AI Voice Coach")}</p>
+    <p style="font-size:11px;color:#BBBAB6;margin:0;">
+      Voice Control AI &nbsp;·&nbsp;
+      <a href="{frontend_url}/dashboard" style="color:#BBBAB6;text-decoration:none;">Dashboard</a> &nbsp;·&nbsp;
+      <a href="{frontend_url}/settings" style="color:#BBBAB6;text-decoration:none;">Email Settings</a>
+    </p>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+
+# ════════════════════════════════════════════════════════════
+# THREE DAILY EMAILS
+# ════════════════════════════════════════════════════════════
 
 def send_morning_email(user: models.User, db: Session):
-    pref = db.query(models.EmailPreference).filter(models.EmailPreference.user_id == user.id).first()
+    """Morning Email — 8 AM"""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
     if pref and not pref.assessment_complete:
         return False
-    latest_report = db.query(models.Report).filter(models.Report.user_id == user.id).order_by(models.Report.created_at.desc()).first()
-    if not latest_report:
+
+    latest = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+    if not latest:
         return False
 
-    weakest_key, weakest_score, weakest_label, script = _get_weakest(latest_report)
-    authority = round(latest_report.authority_score)
-    pace = round(latest_report.pace_score or 0)
+    ctx = _build_user_context(user, db)
+    ai = _generate_ai_message(ctx, "morning")
+    gifs = _get_gif_urls()
+    token = _generate_secure_token(user.id, {"email_type": "morning"})
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
-    img_url = _generate_graphic_b64(
-        authority_score=weakest_score, center_label=weakest_label.upper()[:9],
-        label_top="Today's Focus", label_bottom="Weakest Area",
-        coaching_title="Morning Blueprint", coaching_sub=f"★ {weakest_label} drill",
-        pace_label="Speaking Rate",
-        score_left_val=f"{authority}/100",
-        score_confidence=f"{confidence}/100",
-        score_presence=f"{presence}/100",
-        score_leadership=f"{leadership}/100",
+    exercise = db.query(models.Exercise).filter(
+        models.Exercise.category == ctx["weakest_key"]
+    ).first()
+
+    html = _build_email_html(
+        user_name=user.name,
+        ai_content=ai,
+        gifs=gifs,
+        frontend_url=frontend_url,
+        token=token,
+        exercise_id=exercise.id if exercise else None,
         email_type="morning",
     )
 
-    script_html = script.replace("[PAUSE]",
-        '<span style="border-bottom:1.5px solid #1A1A1B;padding:0 5px;font-size:11px;font-weight:600;">PAUSE</span>'
-    ).replace("[DOWN]", '<span style="font-weight:700;"> ↓ </span>')
-
-    subject = f"Voice Control AI — Morning Blueprint · {weakest_label}"
-    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#FDFCF8;font-family:'Inter',Arial,sans-serif;">
-<div style="max-width:560px;margin:0 auto;background:#FDFCF8;">
-  <div style="padding:22px 28px 18px;border-bottom:0.5px solid #ECEAE4;">
-    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#8A7A60;font-weight:600;margin-bottom:5px;">Voice Control AI · Morning Blueprint</div>
-    <div style="font-size:20px;color:#1A1A1B;font-weight:500;">Good morning, {user.name.split()[0]}.</div>
-    <div style="font-size:13px;color:#9A9890;margin-top:3px;">Your strategy script for today is ready.</div>
-  </div>
-  <div style="padding:24px 20px 16px;">{_graphic_img_tag(img_url)}</div>
-  <div style="padding:0 28px 28px;">
-    <div style="border:0.5px solid #ECEAE4;border-radius:12px;padding:16px 18px;margin-bottom:16px;background:#fff;">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#8A7A60;font-weight:600;margin-bottom:10px;">Today's Script · {weakest_label}</div>
-      <div style="font-size:15px;color:#1A1A1B;font-family:Georgia,serif;line-height:1.9;margin-bottom:10px;">{script_html}</div>
-      <div style="font-size:12px;color:#9A9890;">⏱ 2 min &nbsp;·&nbsp; {weakest_label} &nbsp;·&nbsp; Beginner</div>
-    </div>
-    <div style="text-align:center;"><a href="{frontend_url}/record" style="display:inline-block;background:#1A1A1B;color:#fff;padding:12px 32px;border-radius:30px;font-size:13px;font-weight:500;text-decoration:none;">Open Today's Blueprint</a></div>
-    <p style="text-align:center;font-size:12px;color:#BBBAB6;margin-top:20px;">Voice Control AI &nbsp;·&nbsp; <a href="{frontend_url}/settings" style="color:#BBBAB6;">Email Settings</a></p>
-  </div>
-</div></body></html>"""
+    subject = f"Voice Control AI — Good morning, {user.name.split()[0]} 🌅"
+    if ctx["days_inactive"] >= 3:
+        subject = f"Voice Control AI — We miss your voice, {user.name.split()[0]}"
 
     try:
-        response = resend.Emails.send({"from": FROM_EMAIL, "to": user.email, "subject": subject, "html": html})
-        db.add(models.EmailLog(user_id=user.id, email_type="morning_blueprint", email_subject=subject, status="sent", resend_id=response.get("id", "")))
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        db.add(models.EmailLog(user_id=user.id, email_type="morning_blueprint",
+            email_subject=subject, status="sent", resend_id=response.get("id", "")))
         db.commit()
         return True
     except Exception as e:
-        db.add(models.EmailLog(user_id=user.id, email_type="morning_blueprint", email_subject=subject, status="failed"))
+        db.add(models.EmailLog(user_id=user.id, email_type="morning_blueprint",
+            email_subject=subject, status="failed"))
         db.commit()
         print(f"Morning email error: {e}")
         return False
 
 
 def send_afternoon_email(user: models.User, db: Session):
-    pref = db.query(models.EmailPreference).filter(models.EmailPreference.user_id == user.id).first()
+    """Afternoon Email — 1 PM"""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
     if pref and not pref.assessment_complete:
         return False
-    latest_report = db.query(models.Report).filter(models.Report.user_id == user.id).order_by(models.Report.created_at.desc()).first()
-    if not latest_report:
+
+    latest = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+    if not latest:
         return False
 
-    weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest_report)
-    authority = round(latest_report.authority_score)
-    pause = round(latest_report.pause_score or 0)
-    endings = round(latest_report.ending_score or 0)
-    confidence = round(latest_report.confidence_score or 0)
-    presence = round(latest_report.presence_score or 0)
-    leadership = round(latest_report.leadership_score or 0)
-    coaching_status = "★ Strong authority" if authority >= 70 else "★ Keep pushing"
+    ctx = _build_user_context(user, db)
+    ai = _generate_ai_message(ctx, "afternoon")
+    gifs = _get_gif_urls()
+    token = _generate_secure_token(user.id, {"email_type": "afternoon"})
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
-    exercises_url = f"{frontend_url}/exercises?category={weakest_key}"
 
-    exercise = db.query(models.Exercise).filter(models.Exercise.category == weakest_key).first()
-    exercise_title = exercise.title if exercise else f"{weakest_label} Exercise"
-    exercise_desc = (exercise.instruction[:120] + "...") if exercise and len(exercise.instruction) > 120 else (exercise.instruction if exercise else "")
+    exercise = db.query(models.Exercise).filter(
+        models.Exercise.category == ctx["weakest_key"]
+    ).first()
 
-    img_url = _generate_graphic_b64(
-        authority_score=authority, center_label="AUTHORITY",
-        label_top="Clarity", label_bottom="",
-        coaching_title="Real-time Coaching", coaching_sub=coaching_status,
-        pace_label="Pace",
-        score_left_val=f"{authority}/100",
-        score_confidence=f"{confidence}/100",
-        score_presence=f"{presence}/100",
-        score_leadership=f"{leadership}/100",
+    html = _build_email_html(
+        user_name=user.name,
+        ai_content=ai,
+        gifs=gifs,
+        frontend_url=frontend_url,
+        token=token,
+        exercise_id=exercise.id if exercise else None,
         email_type="afternoon",
     )
 
-    subject = f"Voice Control AI — Score Report · Authority {authority}/100"
-    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#FDFCF8;font-family:'Inter',Arial,sans-serif;">
-<div style="max-width:560px;margin:0 auto;background:#FDFCF8;">
-  <div style="padding:22px 28px 18px;border-bottom:0.5px solid #ECEAE4;">
-    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#8A7A60;font-weight:600;margin-bottom:5px;">Voice Control AI · Score Report</div>
-    <div style="font-size:20px;color:#1A1A1B;font-weight:500;">Your voice report, {user.name.split()[0]}.</div>
-    <div style="font-size:13px;color:#9A9890;margin-top:3px;">Based on your latest recording.</div>
-  </div>
-  <div style="padding:24px 20px 16px;">{_graphic_img_tag(img_url)}</div>
-  <div style="padding:0 28px 28px;">
-    <div style="border:0.5px solid #ECEAE4;border-radius:12px;padding:16px 18px;margin-bottom:16px;background:#fff;">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#8A7A60;font-weight:600;margin-bottom:6px;">AI Voice Coach · {weakest_label}</div>
-      <div style="font-size:14px;color:#1A1A1B;font-weight:500;margin-bottom:4px;">{exercise_title}</div>
-      <div style="font-size:13px;color:#6A6860;line-height:1.6;">{exercise_desc} Your {weakest_label} score is {weakest_score}/100 — this is your biggest area to fix today.</div>
-    </div>
-    <div style="text-align:center;"><a href="{exercises_url}" style="display:inline-block;background:#1A1A1B;color:#fff;padding:12px 32px;border-radius:30px;font-size:13px;font-weight:500;text-decoration:none;">Practice Today's Exercise</a></div>
-    <p style="text-align:center;font-size:12px;color:#BBBAB6;margin-top:20px;">Voice Control AI &nbsp;·&nbsp; <a href="{frontend_url}/settings" style="color:#BBBAB6;">Email Settings</a></p>
-  </div>
-</div></body></html>"""
+    subject = f"Voice Control AI — Your afternoon challenge, {user.name.split()[0]} ☀️"
 
     try:
-        response = resend.Emails.send({"from": FROM_EMAIL, "to": user.email, "subject": subject, "html": html})
-        db.add(models.EmailLog(user_id=user.id, email_type="afternoon_report", email_subject=subject, status="sent", resend_id=response.get("id", "")))
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        db.add(models.EmailLog(user_id=user.id, email_type="afternoon_report",
+            email_subject=subject, status="sent", resend_id=response.get("id", "")))
         db.commit()
         return True
     except Exception as e:
-        db.add(models.EmailLog(user_id=user.id, email_type="afternoon_report", email_subject=subject, status="failed"))
+        db.add(models.EmailLog(user_id=user.id, email_type="afternoon_report",
+            email_subject=subject, status="failed"))
         db.commit()
         print(f"Afternoon email error: {e}")
         return False
 
 
 def send_evening_email(user: models.User, db: Session):
-    pref = db.query(models.EmailPreference).filter(models.EmailPreference.user_id == user.id).first()
+    """Evening Email — 6 PM"""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
     if pref and not pref.assessment_complete:
         return False
-    reports = db.query(models.Report).filter(models.Report.user_id == user.id).order_by(models.Report.created_at.desc()).all()
-    if not reports:
+
+    latest = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+    if not latest:
         return False
 
-    latest = reports[0]
-    prev = reports[1] if len(reports) > 1 else None
-    authority_now = round(latest.authority_score)
-    authority_prev = round(prev.authority_score) if prev else max(0, authority_now - 5)
-    improvement = authority_now - authority_prev
-    improvement_text = f"+{improvement}" if improvement >= 0 else str(improvement)
-    pause_now = round(latest.pause_score or 0)
-    pause_prev = round(prev.pause_score or 0) if prev else max(0, pause_now - 8)
-    weakest_key, weakest_score, weakest_label, _ = _get_weakest(latest)
+    ctx = _build_user_context(user, db)
+    ai = _generate_ai_message(ctx, "evening")
+    gifs = _get_gif_urls()
+    token = _generate_secure_token(user.id, {"email_type": "evening"})
     frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
 
-    img_url = _generate_graphic_b64(
-        authority_score=authority_now, center_label="TODAY",
-        label_top="Improvement", label_bottom="Progress",
-        coaching_title="Daily Progress Review",
-        coaching_sub=f"★ {'Strong improvement' if improvement > 0 else 'Keep going'} today",
-        pace_label="Pace",
-        score_left_val=f"{authority_prev} → {authority_now}",
-        score_confidence=f"{confidence_prev} → {confidence_now}",
-        score_presence=f"{presence_prev} → {presence_now}",
-        score_leadership=f"{leadership_prev} → {leadership_now}",
-        email_type="evening", prev_score=authority_prev,
+    exercise = db.query(models.Exercise).filter(
+        models.Exercise.category == ctx["weakest_key"]
+    ).first()
+
+    html = _build_email_html(
+        user_name=user.name,
+        ai_content=ai,
+        gifs=gifs,
+        frontend_url=frontend_url,
+        token=token,
+        exercise_id=exercise.id if exercise else None,
+        email_type="evening",
     )
 
-    subject = f"Voice Control AI — Evening Review · {improvement_text} points today"
-    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#FDFCF8;font-family:'Inter',Arial,sans-serif;">
-<div style="max-width:560px;margin:0 auto;background:#FDFCF8;">
-  <div style="padding:22px 28px 18px;border-bottom:0.5px solid #ECEAE4;">
-    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#8A7A60;font-weight:600;margin-bottom:5px;">Voice Control AI · Evening Review</div>
-    <div style="font-size:20px;color:#1A1A1B;font-weight:500;">See how far you came today, {user.name.split()[0]}.</div>
-    <div style="font-size:13px;color:#9A9890;margin-top:3px;">Your progress compared to your previous recording.</div>
-  </div>
-  <div style="padding:24px 20px 16px;">{_graphic_img_tag(img_url)}</div>
-  <div style="padding:0 28px 28px;">
-    <div style="border-left:1.5px solid #1A1A1B;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#4A4840;line-height:1.6;background:#fff;border-radius:0 8px 8px 0;">
-      <strong>AI Voice Coach:</strong> {"Your Authority Score improved by " + str(improvement) + " points today. " if improvement > 0 else "Keep practicing — consistency is key. "}Tomorrow we shift focus to your {weakest_label} — target 80/100.
-    </div>
-    <div style="text-align:center;"><a href="{frontend_url}/record" style="display:inline-block;background:#1A1A1B;color:#fff;padding:12px 32px;border-radius:30px;font-size:13px;font-weight:500;text-decoration:none;">Record Tomorrow's Session</a></div>
-    <p style="text-align:center;font-size:12px;color:#BBBAB6;margin-top:20px;">Voice Control AI &nbsp;·&nbsp; <a href="{frontend_url}/settings" style="color:#BBBAB6;">Email Settings</a></p>
-  </div>
-</div></body></html>"""
+    subject = f"Voice Control AI — Your progress today, {user.name.split()[0]} 🌆"
 
     try:
-        response = resend.Emails.send({"from": FROM_EMAIL, "to": user.email, "subject": subject, "html": html})
-        db.add(models.EmailLog(user_id=user.id, email_type="evening_review", email_subject=subject, status="sent", resend_id=response.get("id", "")))
+        response = resend.Emails.send({
+            "from": FROM_EMAIL, "to": user.email,
+            "subject": subject, "html": html,
+        })
+        db.add(models.EmailLog(user_id=user.id, email_type="evening_review",
+            email_subject=subject, status="sent", resend_id=response.get("id", "")))
         db.commit()
         return True
     except Exception as e:
-        db.add(models.EmailLog(user_id=user.id, email_type="evening_review", email_subject=subject, status="failed"))
+        db.add(models.EmailLog(user_id=user.id, email_type="evening_review",
+            email_subject=subject, status="failed"))
         db.commit()
         print(f"Evening email error: {e}")
         return False
