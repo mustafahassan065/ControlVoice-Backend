@@ -27,19 +27,24 @@ def send_daily(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # User ka active program check karo
     check_feature_access(current_user, "daily_exercises")
     user_program = db.query(models.UserProgram).filter(
         models.UserProgram.user_id == current_user.id,
         models.UserProgram.status == "active"
     ).first()
 
+    # Exercise select karo
     if user_program:
         program = db.query(models.Program).filter(
             models.Program.id == user_program.program_id
         ).first()
+
+        # Program focus ke mutabiq category
         categories = program.focus.split(",") if program.focus else ["pause_control"]
         day_index = (user_program.current_day - 1) % len(categories)
         category = categories[day_index].strip()
+
         exercises = db.query(models.Exercise).filter(
             models.Exercise.category == category
         ).all()
@@ -50,7 +55,14 @@ def send_daily(
         raise HTTPException(status_code=404, detail="No exercises found")
 
     exercise = random.choice(exercises)
-    background_tasks.add_task(send_daily_exercise_email, current_user, exercise, db)
+
+    background_tasks.add_task(
+        send_daily_exercise_email,
+        current_user,
+        exercise,
+        db
+    )
+
     return {"message": f"Daily exercise email sending to {current_user.email}", "exercise": exercise.title}
 
 
@@ -60,6 +72,7 @@ def send_weekly(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # Latest report
     reports = db.query(models.Report).filter(
         models.Report.user_id == current_user.id
     ).order_by(models.Report.created_at.desc()).all()
@@ -69,7 +82,15 @@ def send_weekly(
 
     latest = reports[0]
     prev = reports[1] if len(reports) > 1 else None
-    background_tasks.add_task(send_weekly_progress_email, current_user, latest, prev, db)
+
+    background_tasks.add_task(
+        send_weekly_progress_email,
+        current_user,
+        latest,
+        prev,
+        db
+    )
+
     return {"message": f"Weekly progress email sending to {current_user.email}"}
 
 
@@ -92,22 +113,26 @@ def get_email_logs(
         }
         for log in logs
     ]
-
-
 @router.post("/send-missed-practice")
 def send_missed_practice(db: Session = Depends(get_db)):
-    from datetime import datetime, timedelta, date
+    """
+    Scheduler pe run karo — 3 din se koi activity nahi toh email bhejo
+    """
+    from datetime import datetime, timedelta
     from email_service import send_missed_practice_email
 
     three_days_ago = (datetime.utcnow() - timedelta(days=3)).date().isoformat()
+
     users = db.query(models.User).all()
     sent = 0
 
     for user in users:
+        # Check last activity
         last_activity = db.query(models.StreakLog).filter(
             models.StreakLog.user_id == user.id
         ).order_by(models.StreakLog.activity_date.desc()).first()
 
+        # If no activity in 3+ days and has at least 1 recording
         has_recordings = db.query(models.Recording).filter(
             models.Recording.user_id == user.id
         ).count() > 0
@@ -116,6 +141,7 @@ def send_missed_practice(db: Session = Depends(get_db)):
             if not last_activity or last_activity.activity_date <= three_days_ago:
                 days_missed = 3
                 if last_activity:
+                    from datetime import date
                     last = date.fromisoformat(last_activity.activity_date)
                     days_missed = (date.today() - last).days
                 send_missed_practice_email(user, days_missed, db)
@@ -123,9 +149,9 @@ def send_missed_practice(db: Session = Depends(get_db)):
 
     return {"sent": sent}
 
-
 @router.post("/send-monthly")
 def send_monthly_reports(db: Session = Depends(get_db)):
+    """Run on 1st of every month"""
     from email_service import send_monthly_report_email
     users = db.query(models.User).all()
     sent = 0
@@ -138,9 +164,12 @@ def send_monthly_reports(db: Session = Depends(get_db)):
                 sent += 1
     return {"sent": sent}
 
-
 @router.post("/send-exercise-recommendation")
 def send_exercise_recommendation(db: Session = Depends(get_db)):
+    """
+    3 baar din mein run hoga: 8 AM, 12 PM, 6 PM
+    Har user ko unki weakest category ki exercise recommend karo
+    """
     from email_service import send_exercise_recommendation_email
     users = db.query(models.User).all()
     sent = 0
@@ -153,11 +182,13 @@ def send_exercise_recommendation(db: Session = Depends(get_db)):
                 sent += 1
     return {"sent": sent, "message": f"Exercise recommendation emails sent to {sent} users"}
 
-
-@router.post("/send-morning")
-def send_morning_emails(db: Session = Depends(get_db)):
-    """Runs at 8 AM — Morning Blueprint email"""
-    from email_service import send_morning_email
+@router.post("/send-daily-coach")
+def send_daily_coach(db: Session = Depends(get_db)):
+    """
+    Single daily coaching email — runs once per day at 8 AM Pakistan time
+    Replaces morning/afternoon/evening emails
+    """
+    from email_service import send_daily_coach_email
     users = db.query(models.User).all()
     sent = 0
     for user in users:
@@ -165,38 +196,6 @@ def send_morning_emails(db: Session = Depends(get_db)):
             models.Report.user_id == user.id
         ).first()
         if has_report:
-            if send_morning_email(user, db):
+            if send_daily_coach_email(user, db):
                 sent += 1
-    return {"sent": sent, "message": f"Morning blueprint emails sent to {sent} users"}
-
-
-@router.post("/send-afternoon")
-def send_afternoon_emails(db: Session = Depends(get_db)):
-    """Runs at 1 PM — Score Report email"""
-    from email_service import send_afternoon_email
-    users = db.query(models.User).all()
-    sent = 0
-    for user in users:
-        has_report = db.query(models.Report).filter(
-            models.Report.user_id == user.id
-        ).first()
-        if has_report:
-            if send_afternoon_email(user, db):
-                sent += 1
-    return {"sent": sent, "message": f"Afternoon report emails sent to {sent} users"}
-
-
-@router.post("/send-evening")
-def send_evening_emails(db: Session = Depends(get_db)):
-    """Runs at 6 PM — Evening Progress Review email"""
-    from email_service import send_evening_email
-    users = db.query(models.User).all()
-    sent = 0
-    for user in users:
-        has_report = db.query(models.Report).filter(
-            models.Report.user_id == user.id
-        ).first()
-        if has_report:
-            if send_evening_email(user, db):
-                sent += 1
-    return {"sent": sent, "message": f"Evening review emails sent to {sent} users"}
+    return {"sent": sent, "message": f"Daily coach emails sent to {sent} users"}
