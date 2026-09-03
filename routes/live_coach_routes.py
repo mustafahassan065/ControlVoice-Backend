@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import get_db
 from auth import get_current_user
@@ -6,8 +6,115 @@ import models
 import json
 import os
 import httpx
+from datetime import date as date_obj
 
 router = APIRouter(prefix="/live-coach", tags=["live-coach"])
+
+def _generate_session_summary(user: models.User, conversation_id: str, db: Session):
+    """Generate and save session summary after Rina session ends"""
+    try:
+        from openai import OpenAI
+        client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        latest = db.query(models.Report).filter(
+            models.Report.user_id == user.id
+        ).order_by(models.Report.created_at.desc()).first()
+
+        if not latest:
+            return
+
+        scores = {
+            "Pause Control": round(latest.pause_score or 0),
+            "Strong Endings": round(latest.ending_score or 0),
+            "Pitch Movement": round(latest.pitch_score or 0),
+            "Pace Control": round(latest.pace_score or 0),
+        }
+        weakest = min(scores, key=scores.get)
+
+        prompt = f"""Based on this student's voice data, generate a coaching session summary.
+
+Student: {user.name}
+Authority Score: {round(latest.authority_score)}/100
+Weakest area: {weakest} ({scores[weakest]}/100)
+All scores: {json.dumps(scores)}
+
+Return ONLY valid JSON:
+{{
+  "goal": "one line — what student is working toward",
+  "focus": "what was practiced today",
+  "problem": "main issue observed",
+  "exercise": "exercise recommended",
+  "improvement": "Strong / Moderate / None",
+  "next_session": "what to focus on next session",
+  "coaching_note": "one short useful fact about this student",
+  "rina_observation": "one specific thing Rina noticed about their voice",
+  "next_focus": "specific next focus area"
+}}"""
+
+        response = client_ai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.6,
+            max_tokens=400,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        summary_data = json.loads(raw.strip())
+
+        # Save session summary
+        today = date_obj.today().isoformat()
+        summary = models.SessionSummary(
+            user_id=user.id,
+            session_date=today,
+            goal=summary_data.get("goal", ""),
+            focus=summary_data.get("focus", ""),
+            problem=summary_data.get("problem", ""),
+            exercise=summary_data.get("exercise", ""),
+            before_authority=round(latest.authority_score),
+            after_authority=round(latest.authority_score),
+            improvement=summary_data.get("improvement", "None"),
+            next_session=summary_data.get("next_session", ""),
+            raw_summary=json.dumps(summary_data),
+        )
+        db.add(summary)
+
+        # Update or create StudentMemory
+        memory = db.query(models.StudentMemory).filter(
+            models.StudentMemory.user_id == user.id
+        ).first()
+
+        if not memory:
+            memory = models.StudentMemory(user_id=user.id)
+            db.add(memory)
+
+        memory.current_focus = summary_data.get("focus", memory.current_focus)
+        memory.next_focus = summary_data.get("next_focus", memory.next_focus)
+        memory.rina_observation = summary_data.get("rina_observation", memory.rina_observation)
+
+        # Add coaching note
+        existing_notes = []
+        if memory.coaching_notes:
+            try:
+                existing_notes = json.loads(memory.coaching_notes)
+            except:
+                pass
+        note = summary_data.get("coaching_note", "")
+        if note:
+            existing_notes.append(note)
+            existing_notes = existing_notes[-10:]  # keep last 10
+        memory.coaching_notes = json.dumps(existing_notes)
+
+        db.commit()
+        print(f"Session summary saved for user {user.id}")
+
+    except Exception as e:
+        print(f"Session summary error: {e}")
+
+
 
 TAVUS_API_KEY = os.getenv("TAVUS_API_KEY")
 TAVUS_REPLICA_ID = os.getenv("TAVUS_REPLICA_ID")
@@ -135,19 +242,73 @@ def build_user_context(user: models.User, db: Session) -> str:
         if program:
             context += f"- Active program: {program.title} (Day {active_program.current_day})\n"
 
+    # ── RINA MEMORY ──
+    memory = db.query(models.StudentMemory).filter(
+        models.StudentMemory.user_id == user.id
+    ).first()
+
+    recent_summaries = db.query(models.SessionSummary).filter(
+        models.SessionSummary.user_id == user.id
+    ).order_by(models.SessionSummary.created_at.desc()).limit(5).all()
+
+    coaching_plan = db.query(models.CoachingPlan).filter(
+        models.CoachingPlan.user_id == user.id
+    ).first()
+
+    if memory or recent_summaries or coaching_plan:
+        context += "\n=== RINA COACHING MEMORY ===\n"
+        context += "You are Rina, a persistent personal voice coach. You remember this student.\n"
+        context += "Reference previous work naturally. Never say 'I remember everything about you.'\n"
+        context += "Instead say things like 'Last time we worked on...' or 'You have been improving your...'\n\n"
+
+        if memory:
+            if memory.current_focus:
+                context += f"Current focus area: {memory.current_focus}\n"
+            if memory.next_focus:
+                context += f"Next recommended focus: {memory.next_focus}\n"
+            if memory.strongest_improvement:
+                context += f"Strongest improvement so far: {memory.strongest_improvement}\n"
+            if memory.rina_observation:
+                context += f"Rina observation: {memory.rina_observation}\n"
+            if memory.coaching_notes:
+                try:
+                    notes = json.loads(memory.coaching_notes)
+                    context += "Coaching notes:\n"
+                    for note in notes[-5:]:
+                        context += f"  - {note}\n"
+                except:
+                    pass
+
+        if coaching_plan:
+            context += f"\nCurrent program: {coaching_plan.program_name}\n"
+            context += f"Week {coaching_plan.current_week}, Session {coaching_plan.current_session}\n"
+            if coaching_plan.current_milestone:
+                context += f"Current milestone: {coaching_plan.current_milestone}\n"
+
+        if recent_summaries:
+            context += "\nRecent session history:\n"
+            for s in recent_summaries:
+                context += f"  - {s.session_date}: focused on {s.focus}"
+                if s.improvement and s.improvement != "None":
+                    context += f", improvement: {s.improvement}"
+                if s.next_session:
+                    context += f". Next: {s.next_session}"
+                context += "\n"
+
     context += "\n=== COACHING INSTRUCTIONS ===\n"
-    context += f"1. Greet {user.name.split()[0]} warmly and mention their current Authority Score.\n"
-    context += f"2. Immediately focus on their weakest area and explain why it matters.\n"
+    context += f"1. Greet {user.name.split()[0]} warmly. If you have memory of previous sessions, reference naturally.\n"
+    context += f"2. Focus on their current weakness and explain why it matters.\n"
     context += f"3. Give one specific exercise they can practice right now.\n"
-    context += "4. Be conversational — listen to what they say and respond naturally.\n"
-    context += "5. If they ask about a specific score, explain it in simple terms.\n"
-    context += "6. Always be encouraging — celebrate any improvement you see in their data.\n"
+    context += "4. Be conversational — listen and respond naturally.\n"
+    context += "5. Sound like a personal coach who knows this student, not a generic AI.\n"
+    context += "6. Always be encouraging — celebrate real improvement only.\n"
 
     return context
 
 
 @router.post("/start")
 async def start_live_coach_session(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -193,9 +354,11 @@ async def start_live_coach_session(
         if not conversation_url:
             raise HTTPException(status_code=500, detail="No conversation URL returned from Tavus")
 
+        conversation_id = data.get("conversation_id", "")
+
         return {
             "conversation_url": conversation_url,
-            "conversation_id": data.get("conversation_id"),
+            "conversation_id": conversation_id,
         }
 
     except httpx.TimeoutException:
@@ -211,3 +374,53 @@ def _get_authority(user: models.User, db: Session) -> str:
     if latest:
         return f"{round(latest.authority_score)}/100"
     return "not yet assessed"
+
+@router.post("/end-session")
+async def end_session(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Call when user ends live coach session — saves memory summary"""
+    background_tasks.add_task(_generate_session_summary, current_user, "", db)
+    return {"message": "Session ended. Summary being generated."}
+
+
+@router.get("/voice-profile")
+def get_voice_profile(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get user's Voice Profile for dashboard display"""
+    memory = db.query(models.StudentMemory).filter(
+        models.StudentMemory.user_id == current_user.id
+    ).first()
+
+    plan = db.query(models.CoachingPlan).filter(
+        models.CoachingPlan.user_id == current_user.id
+    ).first()
+
+    recent = db.query(models.SessionSummary).filter(
+        models.SessionSummary.user_id == current_user.id
+    ).order_by(models.SessionSummary.created_at.desc()).limit(3).all()
+
+    return {
+        "current_focus": memory.current_focus if memory else None,
+        "next_focus": memory.next_focus if memory else None,
+        "strongest_improvement": memory.strongest_improvement if memory else None,
+        "rina_observation": memory.rina_observation if memory else None,
+        "coaching_plan": {
+            "program": plan.program_name if plan else None,
+            "week": plan.current_week if plan else None,
+            "milestone": plan.current_milestone if plan else None,
+        } if plan else None,
+        "recent_sessions": [
+            {
+                "date": s.session_date,
+                "focus": s.focus,
+                "improvement": s.improvement,
+                "next": s.next_session,
+            }
+            for s in recent
+        ],
+    }

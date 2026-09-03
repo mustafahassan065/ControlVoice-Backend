@@ -1269,4 +1269,432 @@ def send_daily_coach_email(user: models.User, db: Session) -> bool:
         ))
         db.commit()
         print(f"Daily coach email error: {e}")
+        return Fals
+
+# ════════════════════════════════════════════════════════════
+# DAILY COACH EMAIL — Single email per day
+# ════════════════════════════════════════════════════════════
+
+FOCUS_ROTATION = [
+    "confidence", "pace", "pausing", "emphasis", "articulation",
+    "clarity", "sentence_endings", "pressure", "presentations",
+    "interviews", "leadership", "storytelling", "persuasion",
+    "difficult_conversations", "networking", "disagreement",
+]
+
+FOCUS_LABELS = {
+    "confidence": "Confidence",
+    "pace": "Pace Control",
+    "pausing": "Intentional Pausing",
+    "emphasis": "Emphasis & Stress",
+    "articulation": "Articulation",
+    "clarity": "Clarity",
+    "sentence_endings": "Sentence Endings",
+    "pressure": "Speaking Under Pressure",
+    "presentations": "Presentations",
+    "interviews": "Interview Skills",
+    "leadership": "Leadership Voice",
+    "storytelling": "Storytelling",
+    "persuasion": "Persuasion",
+    "difficult_conversations": "Difficult Conversations",
+    "networking": "Networking",
+    "disagreement": "Expressing Disagreement",
+}
+
+
+def _get_today_focus(user_id: int, db: Session) -> str:
+    """Rotate focus areas — check StudentMemory for next_focus first"""
+    # Check if Rina has a recommendation
+    memory = db.query(models.StudentMemory).filter(
+        models.StudentMemory.user_id == user_id
+    ).first()
+    if memory and memory.next_focus:
+        for key, label in FOCUS_LABELS.items():
+            if key in memory.next_focus.lower() or label.lower() in memory.next_focus.lower():
+                return key
+
+    # Fallback: rotate
+    recent_logs = db.query(models.EmailLog).filter(
+        models.EmailLog.user_id == user_id,
+        models.EmailLog.email_type == "daily_coach"
+    ).order_by(models.EmailLog.sent_at.desc()).limit(16).all()
+
+    used = []
+    for log in recent_logs:
+        try:
+            subj = log.email_subject or ""
+            for focus in FOCUS_ROTATION:
+                if FOCUS_LABELS[focus].lower() in subj.lower():
+                    used.append(focus)
+                    break
+        except:
+            pass
+
+    for focus in FOCUS_ROTATION:
+        if focus not in used:
+            return focus
+    return FOCUS_ROTATION[len(recent_logs) % len(FOCUS_ROTATION)]
+
+
+def _get_session_memory(user_id: int, db: Session) -> dict:
+    """Get recent session summaries and memory for email context"""
+    memory = db.query(models.StudentMemory).filter(
+        models.StudentMemory.user_id == user_id
+    ).first()
+
+    recent = db.query(models.SessionSummary).filter(
+        models.SessionSummary.user_id == user_id
+    ).order_by(models.SessionSummary.created_at.desc()).limit(3).all()
+
+    return {
+        "current_focus": memory.current_focus if memory else None,
+        "next_focus": memory.next_focus if memory else None,
+        "rina_observation": memory.rina_observation if memory else None,
+        "strongest_improvement": memory.strongest_improvement if memory else None,
+        "recent_sessions": [
+            {
+                "date": s.session_date,
+                "focus": s.focus,
+                "improvement": s.improvement,
+                "problem": s.problem,
+                "next": s.next_session,
+            }
+            for s in recent
+        ] if recent else [],
+    }
+
+
+def _generate_ai_subject(user_context: dict, session_memory: dict, focus: str) -> str:
+    """Generate AI subject line based on student memory — like Rina wrote it"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        focus_label = FOCUS_LABELS.get(focus, focus)
+        recent = session_memory.get("recent_sessions", [])
+        last_session = recent[0] if recent else None
+
+        memory_context = ""
+        if last_session:
+            memory_context = f"Last session: focused on {last_session.get('focus', '')}, improvement: {last_session.get('improvement', 'None')}. Next recommended: {last_session.get('next', '')}."
+        if session_memory.get("rina_observation"):
+            memory_context += f" Rina noticed: {session_memory['rina_observation']}."
+
+        prompt = f"""You are Rina, the student's personal Voice Control AI Coach.
+
+Write ONE compelling email subject line based on the student's coaching data.
+
+Student: {user_context["name"]}
+Today's focus: {focus_label}
+Goal: {user_context["goal"]}
+{memory_context}
+
+Rules:
+- Maximum 12 words
+- Sound like a personal coach, not marketing software
+- Do not always use the student's name
+- Do not write "Your daily practice"
+- Do not include "Voice Control AI" in the subject
+- Vary style: progress / curiosity / challenge / encouragement / real-life relevance
+- Only reference previous progress if the data confirms it
+- Never invent improvement
+- Connect yesterday's work to today's next step
+- No clickbait, no excessive exclamation marks
+
+Return ONLY the subject line. No quotes, no explanation."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.9,
+            max_tokens=50,
+        )
+        subject = response.choices[0].message.content.strip().strip('"').strip("'")
+        return subject
+
+    except Exception as e:
+        print(f"Subject generation error: {e}")
+        focus_label = FOCUS_LABELS.get(focus, focus)
+        return f"Your voice practice for today — {focus_label}"
+
+
+def _generate_daily_content(user_context: dict, focus: str, session_memory: dict) -> dict:
+    """Generate fresh daily coaching content via OpenAI with memory"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        focus_label = FOCUS_LABELS.get(focus, focus)
+        days_inactive = user_context.get("days_inactive", 0)
+        recent = session_memory.get("recent_sessions", [])
+        last_session = recent[0] if recent else None
+
+        inactive_note = ""
+        if days_inactive >= 3:
+            inactive_note = f"The user has been inactive for {days_inactive} days. Be warm and welcoming, not pressuring."
+
+        memory_note = ""
+        if last_session:
+            memory_note = f"Last session: {last_session.get('focus', '')} — improvement: {last_session.get('improvement', 'None')}. Recommended next: {last_session.get('next', '')}."
+        if session_memory.get("rina_observation"):
+            memory_note += f" Rina noticed: {session_memory['rina_observation']}."
+
+        prompt = f"""You are Rina, a warm and intelligent AI voice coach sending a personal daily coaching email.
+
+Today's training focus: {focus_label}
+User name: {user_context["name"]}
+User goal: {user_context["goal"]}
+{memory_note}
+{inactive_note}
+
+Generate a fresh, personal daily coaching email. Return ONLY valid JSON:
+{{
+  "opening": "2-3 sentences max. Natural, warm, personal. If there is session memory, reference something real naturally — like a real coach would. Never say 'I remember everything'. Say things like 'Last time we worked on...' Never invent progress.",
+  "sentence": "One powerful natural English sentence for a real situation. Must demonstrate today's focus: {focus_label}. Max 15 words.",
+  "listen_instruction": "One sentence. Tell them what to notice. Focus on {focus_label}.",
+  "shadow_instruction": "One sentence. How to shadow this sentence.",
+  "speak_instruction": "One sentence. Encourage them to make it theirs.",
+  "closing": "One warm short sentence. Real, not generic.",
+  "sign_off": "See you tomorrow — [something brief and specific about tomorrow based on coaching plan]."
+}}
+
+Rules:
+- Sound personal and human, not automated
+- Never use 'boundaries', 'journey', 'empower', 'transform'
+- Keep opening under 50 words
+- The sentence must be something a real professional would say naturally"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.85,
+            max_tokens=500,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw.strip())
+
+    except Exception as e:
+        print(f"Daily content generation error: {e}")
+        return {
+            "opening": f"Hi {user_context['name'].split()[0]}, today we focus on {FOCUS_LABELS.get(focus, focus)}. One sentence. One practice.",
+            "sentence": "There is one point I would like you to remember.",
+            "listen_instruction": "Notice the calm pace and the intentional pause.",
+            "shadow_instruction": "Speak along with the model. Match the rhythm exactly.",
+            "speak_instruction": "Now say it yourself. Make the sentence yours.",
+            "closing": "Take this into one real conversation today.",
+            "sign_off": "See you tomorrow — we will build something new.",
+        }
+
+
+def _generate_audio_url(sentence: str, user_id: int) -> str:
+    """Generate model audio via OpenAI TTS and upload to S3"""
+    try:
+        import boto3, uuid
+        from openai import OpenAI
+
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="nova",
+            input=sentence,
+            speed=0.92,
+        )
+
+        audio_bytes = response.content
+        s3 = boto3.client("s3",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name="eu-north-1",
+        )
+        bucket = os.getenv("AWS_BUCKET_NAME")
+        key = f"daily-audio/{uuid.uuid4()}.mp3"
+        s3.put_object(Bucket=bucket, Key=key, Body=audio_bytes, ContentType="audio/mpeg")
+        return f"https://{bucket}.s3.eu-north-1.amazonaws.com/{key}"
+
+    except Exception as e:
+        print(f"Audio generation error: {e}")
+        return None
+
+
+def _build_user_context(user: models.User, db: Session) -> dict:
+    latest = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+
+    from datetime import date
+    last_log = db.query(models.StreakLog).filter(
+        models.StreakLog.user_id == user.id
+    ).order_by(models.StreakLog.activity_date.desc()).first()
+
+    days_inactive = 0
+    if last_log:
+        last_date = date.fromisoformat(last_log.activity_date)
+        days_inactive = (date.today() - last_date).days
+
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == user.id
+    ).first()
+
+    goal = "improving speaking confidence"
+    if profile and profile.goals:
+        try:
+            goals = json.loads(profile.goals)
+            if goals:
+                goal = goals[0]
+        except:
+            goal = str(profile.goals)[:50]
+
+    return {
+        "name": user.name,
+        "goal": goal,
+        "days_inactive": days_inactive,
+    }
+
+
+def _generate_secure_token(user_id: int) -> str:
+    try:
+        import jwt as pyjwt
+        from datetime import datetime, timedelta
+        payload = {
+            "user_id": user_id,
+            "exp": datetime.utcnow() + timedelta(days=7),
+        }
+        return pyjwt.encode(payload, os.getenv("SECRET_KEY", "secret"), algorithm="HS256")
+    except:
+        return str(user_id)
+
+
+def send_daily_coach_email(user: models.User, db: Session) -> bool:
+    """Single daily coaching email — premium, personal, clean."""
+    pref = db.query(models.EmailPreference).filter(
+        models.EmailPreference.user_id == user.id
+    ).first()
+    if pref and not pref.assessment_complete:
+        return False
+
+    latest = db.query(models.Report).filter(
+        models.Report.user_id == user.id
+    ).order_by(models.Report.created_at.desc()).first()
+    if not latest:
+        return False
+
+    ctx = _build_user_context(user, db)
+    session_memory = _get_session_memory(user.id, db)
+    focus = _get_today_focus(user.id, db)
+
+    # Generate content with memory
+    content_data = _generate_daily_content(ctx, focus, session_memory)
+    sentence = content_data.get("sentence", "There is one point I would like you to remember.")
+
+    # AI generated subject line
+    subject = _generate_ai_subject(ctx, session_memory, focus)
+
+    # Generate audio
+    audio_url = _generate_audio_url(sentence, user.id)
+
+    # Deep links
+    token = _generate_secure_token(user.id)
+    frontend_url = os.getenv("FRONTEND_URL", "https://voicecontrol.tech")
+    coach_url = f"{frontend_url}/coach?mode=practice&token={token}&focus={focus}"
+    listen_url = audio_url or f"{frontend_url}/coach?mode=listen&token={token}&focus={focus}"
+
+    first_name = user.name.split()[0]
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#F9F8F6;font-family:'Georgia',serif;">
+<div style="max-width:560px;margin:0 auto;padding:20px 16px;">
+
+  <div style="padding:40px 0 32px;text-align:left;">
+    <p style="font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 32px;font-family:'Inter',Arial,sans-serif;">VOICE CONTROL AI</p>
+    <p style="font-size:28px;color:#1A1A1B;line-height:1.4;margin:0 0 16px;font-weight:400;">Hi {first_name},</p>
+    <p style="font-size:17px;color:#4A4840;line-height:1.75;margin:0;font-weight:400;">{content_data.get("opening", "")}</p>
+  </div>
+
+  <div style="height:1px;background:#E8E4DC;margin:0 0 40px;"></div>
+
+  <p style="font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 20px;font-family:'Inter',Arial,sans-serif;">YOUR SENTENCE TO PRACTICE FOR TODAY</p>
+
+  <div style="padding:0 0 40px;">
+    <p style="font-size:26px;color:#1A1A1B;line-height:1.45;margin:0;font-weight:400;font-style:italic;">&ldquo;{sentence}&rdquo;</p>
+  </div>
+
+  <div style="height:1px;background:#E8E4DC;margin:0 0 40px;"></div>
+
+  <div style="margin-bottom:36px;">
+    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">🎧 LISTEN</p>
+    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0 0 16px;font-weight:400;">{content_data.get("listen_instruction", "")}</p>
+    <a href="{listen_url}" style="display:inline-block;border:1.5px solid #1A1A1B;color:#1A1A1B;padding:10px 24px;border-radius:30px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-decoration:none;font-family:'Inter',Arial,sans-serif;">LISTEN</a>
+  </div>
+
+  <div style="margin-bottom:36px;">
+    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">🗣️ SHADOW</p>
+    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0;font-weight:400;">{content_data.get("shadow_instruction", "")}</p>
+  </div>
+
+  <div style="margin-bottom:48px;">
+    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">🎙️ SPEAK</p>
+    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0;font-weight:400;">{content_data.get("speak_instruction", "")}</p>
+  </div>
+
+  <div style="margin-bottom:48px;">
+    <a href="{coach_url}" style="display:block;background:#1A1A1B;color:#FFFFFF;padding:18px 32px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:0.12em;text-decoration:none;text-align:center;font-family:'Inter',Arial,sans-serif;">PRACTISE WITH YOUR VOICE CONTROL AI COACH &rarr;</a>
+  </div>
+
+  <div style="height:1px;background:#E8E4DC;margin:0 0 36px;"></div>
+
+  <div style="padding-bottom:48px;">
+    <p style="font-size:16px;color:#4A4840;line-height:1.7;margin:0 0 28px;font-weight:400;">{content_data.get("closing", "Take this into one real conversation today.")}</p>
+    <p style="font-size:15px;color:#9A9890;line-height:1.6;margin:0 0 6px;font-weight:400;">{content_data.get("sign_off", "See you tomorrow.")}</p>
+    <p style="font-size:15px;color:#1A1A1B;font-weight:600;margin:0;font-family:'Inter',Arial,sans-serif;">Rina</p>
+    <p style="font-size:13px;color:#9A9890;margin:4px 0 0;font-family:'Inter',Arial,sans-serif;">Your Voice Control AI Coach</p>
+  </div>
+
+  <div style="border-top:1px solid #E8E4DC;padding-top:24px;text-align:center;">
+    <p style="font-size:11px;color:#BBBAB6;margin:0;font-family:'Inter',Arial,sans-serif;">
+      Voice Control AI &nbsp;·&nbsp;
+      <a href="{frontend_url}/dashboard" style="color:#BBBAB6;text-decoration:none;">Dashboard</a>
+      &nbsp;·&nbsp;
+      <a href="{frontend_url}/settings" style="color:#BBBAB6;text-decoration:none;">Email Settings</a>
+    </p>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    try:
+        response = resend.Emails.send({
+            "from": FROM_EMAIL,
+            "to": user.email,
+            "subject": subject,
+            "html": html,
+        })
+        db.add(models.EmailLog(
+            user_id=user.id,
+            email_type="daily_coach",
+            email_subject=subject,
+            status="sent",
+            resend_id=response.get("id", "")
+        ))
+        db.commit()
+        return True
+    except Exception as e:
+        db.add(models.EmailLog(
+            user_id=user.id,
+            email_type="daily_coach",
+            email_subject=subject,
+            status="failed"
+        ))
+        db.commit()
+        print(f"Daily coach email error: {e}")
         return False

@@ -246,3 +246,59 @@ class TrainingSession(Base):
     improvement = Column(Float, nullable=True)
     completed = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+# ═══ RINA MEMORY SYSTEM ═══
+
+class StudentMemory(Base):
+    __tablename__ = "student_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    # Long-term coaching notes — key facts about the student
+    coaching_notes = Column(Text, nullable=True)        # JSON array of short facts
+    # Current coaching plan
+    current_program = Column(String, nullable=True)     # e.g. "Executive Presence"
+    current_week = Column(Integer, default=1)
+    current_focus = Column(String, nullable=True)       # e.g. "Deliberate Pausing"
+    next_focus = Column(String, nullable=True)
+    strongest_improvement = Column(String, nullable=True)
+    rina_observation = Column(Text, nullable=True)      # e.g. "Sounds strongest when slows first sentence"
+    # Voice baseline
+    baseline_pace = Column(Float, nullable=True)
+    baseline_authority = Column(Float, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SessionSummary(Base):
+    __tablename__ = "session_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    session_date = Column(String, nullable=False)       # YYYY-MM-DD
+    goal = Column(String, nullable=True)
+    focus = Column(String, nullable=True)               # what was practiced
+    problem = Column(Text, nullable=True)               # what struggled
+    exercise = Column(String, nullable=True)            # exercise used
+    before_authority = Column(Float, nullable=True)
+    after_authority = Column(Float, nullable=True)
+    improvement = Column(String, nullable=True)         # Strong / Moderate / None
+    next_session = Column(Text, nullable=True)          # recommended next focus
+    raw_summary = Column(Text, nullable=True)           # full JSON
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CoachingPlan(Base):
+    __tablename__ = "coaching_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    program_name = Column(String, nullable=True)        # e.g. "Executive Presence"
+    week_1_focus = Column(String, nullable=True)
+    week_2_focus = Column(String, nullable=True)
+    week_3_focus = Column(String, nullable=True)
+    week_4_focus = Column(String, nullable=True)
+    current_week = Column(Integer, default=1)
+    current_session = Column(Integer, default=1)        # session within week
+    current_milestone = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
