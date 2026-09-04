@@ -1232,11 +1232,14 @@ def send_daily_coach_email(user: models.User, db: Session) -> bool:
 
   <!-- FOOTER -->
   <div style="border-top:1px solid #E8E4DC;padding-top:24px;text-align:center;">
-    <p style="font-size:11px;color:#BBBAB6;margin:0;font-family:'Inter',Arial,sans-serif;">
+    <p style="font-size:11px;color:#BBBAB6;margin:0 0 6px;font-family:'Inter',Arial,sans-serif;">
       Voice Control AI &nbsp;·&nbsp;
       <a href="{frontend_url}/dashboard" style="color:#BBBAB6;text-decoration:none;">Dashboard</a>
       &nbsp;·&nbsp;
       <a href="{frontend_url}/settings" style="color:#BBBAB6;text-decoration:none;">Email Settings</a>
+    </p>
+    <p style="font-size:11px;color:#BBBAB6;margin:0;font-family:'Inter',Arial,sans-serif;">
+      <a href="{frontend_url}/settings?unsubscribe=1" style="color:#BBBAB6;text-decoration:underline;">Unsubscribe</a>
     </p>
   </div>
 
@@ -1392,7 +1395,7 @@ Goal: {user_context["goal"]}
 Rules:
 - Maximum 12 words
 - Sound like a personal coach, not marketing software
-- Do not always use the student's name
+- Always include the student's first name — it must feel personal and direct
 - Do not write "Your daily practice"
 - Do not include "Voice Control AI" in the subject
 - Vary style: progress / curiosity / challenge / encouragement / real-life relevance
@@ -1660,11 +1663,14 @@ def send_daily_coach_email(user: models.User, db: Session) -> bool:
   </div>
 
   <div style="border-top:1px solid #E8E4DC;padding-top:24px;text-align:center;">
-    <p style="font-size:11px;color:#BBBAB6;margin:0;font-family:'Inter',Arial,sans-serif;">
+    <p style="font-size:11px;color:#BBBAB6;margin:0 0 6px;font-family:'Inter',Arial,sans-serif;">
       Voice Control AI &nbsp;·&nbsp;
       <a href="{frontend_url}/dashboard" style="color:#BBBAB6;text-decoration:none;">Dashboard</a>
       &nbsp;·&nbsp;
       <a href="{frontend_url}/settings" style="color:#BBBAB6;text-decoration:none;">Email Settings</a>
+    </p>
+    <p style="font-size:11px;color:#BBBAB6;margin:0;font-family:'Inter',Arial,sans-serif;">
+      <a href="{frontend_url}/settings?unsubscribe=1" style="color:#BBBAB6;text-decoration:underline;">Unsubscribe</a>
     </p>
   </div>
 
