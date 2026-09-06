@@ -1383,26 +1383,36 @@ def _generate_ai_subject(user_context: dict, session_memory: dict, focus: str) -
         if session_memory.get("rina_observation"):
             memory_context += f" Rina noticed: {session_memory['rina_observation']}."
 
-        prompt = f"""You are Rina, the student's personal Voice Control AI Coach.
+        first_name = user_context["name"].split()[0]
 
-Write ONE compelling email subject line based on the student's coaching data.
+        prompt = f"""You are Rina, a personal AI voice coach writing a short email subject line to your student.
 
-Student: {user_context["name"]}
-Today's focus: {focus_label}
+Student first name: {first_name}
 Goal: {user_context["goal"]}
 {memory_context}
 
+Write ONE subject line that sounds like a short personal message from Rina directly to {first_name}.
+
 Rules:
-- Maximum 12 words
-- Sound like a personal coach, not marketing software
-- Always include the student's first name — it must feel personal and direct
-- Do not write "Your daily practice"
-- Do not include "Voice Control AI" in the subject
-- Vary style: progress / curiosity / challenge / encouragement / real-life relevance
-- Only reference previous progress if the data confirms it
-- Never invent improvement
-- Connect yesterday's work to today's next step
-- No clickbait, no excessive exclamation marks
+- Always start with the student's first name: "{first_name},"
+- 5 to 10 words total including the name
+- Sound like Rina is personally reaching out — warm, direct, human
+- Must NOT mention the exercise title or lesson topic
+- Must NOT say "your daily practice", "voice exercise", "today's lesson"
+- Must NOT include "Voice Control AI" 
+- Create curiosity or connection — make them want to open it
+- Vary the style each time: curiosity / challenge / personal observation / encouragement / real-life moment
+- No exclamation marks
+- No clickbait
+
+Examples of the right tone:
+{first_name}, I noticed something in your voice
+{first_name}, let's work on this today
+{first_name}, can you make this sentence land?
+{first_name}, your voice challenge is ready
+{first_name}, one change for a stronger voice
+{first_name}, this is worth two minutes today
+{first_name}, I want you to try something
 
 Return ONLY the subject line. No quotes, no explanation."""
 
@@ -1417,8 +1427,16 @@ Return ONLY the subject line. No quotes, no explanation."""
 
     except Exception as e:
         print(f"Subject generation error: {e}")
-        focus_label = FOCUS_LABELS.get(focus, focus)
-        return f"Your voice practice for today — {focus_label}"
+        first_name = user_context["name"].split()[0]
+        import random
+        fallbacks = [
+            f"{first_name}, I noticed something in your voice",
+            f"{first_name}, one change for a stronger voice",
+            f"{first_name}, your voice challenge is ready",
+            f"{first_name}, let's work on this today",
+            f"{first_name}, can you make this sentence land?",
+        ]
+        return random.choice(fallbacks)
 
 
 def _generate_daily_content(user_context: dict, focus: str, session_memory: dict) -> dict:
