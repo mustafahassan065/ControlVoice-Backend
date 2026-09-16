@@ -965,7 +965,7 @@ Rules:
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.85,
-            max_tokens=500,
+            max_tokens=700,
         )
 
         raw = response.choices[0].message.content.strip()
@@ -1385,36 +1385,37 @@ def _generate_ai_subject(user_context: dict, session_memory: dict, focus: str) -
 
         first_name = user_context["name"].split()[0]
 
-        prompt = f"""You are Rina, a personal AI voice coach writing a short email subject line to your student.
+        prompt = f"""You are Rina, a personal AI voice coach writing a daily email subject line.
 
 Student first name: {first_name}
 Goal: {user_context["goal"]}
 {memory_context}
 
-Write ONE subject line that sounds like a short personal message from Rina directly to {first_name}.
+Write ONE subject line — short, specific, action-oriented, personal.
 
 Rules:
-- Always start with the student's first name: "{first_name},"
-- 5 to 10 words total including the name
-- Sound like Rina is personally reaching out — warm, direct, human
-- Must NOT mention the exercise title or lesson topic
-- Must NOT say "your daily practice", "voice exercise", "today's lesson"
-- Must NOT include "Voice Control AI" 
-- Create curiosity or connection — make them want to open it
-- Vary the style each time: curiosity / challenge / personal observation / encouragement / real-life moment
+- Always start with exactly: "{first_name},"
+- 6 to 10 words total including the name
+- Must feel like a real coach personally reaching out
+- Must NOT be vague — no "think about your voice", "speaking journey", "I believe in you"
+- Must NOT mention lesson title or topic name
+- Must NOT include "Voice Control AI"
+- Must create immediate curiosity or a clear challenge
 - No exclamation marks
-- No clickbait
+- No generic motivational phrases
 
-Examples of the right tone:
-{first_name}, I noticed something in your voice
-{first_name}, let's work on this today
-{first_name}, can you make this sentence land?
-{first_name}, your voice challenge is ready
-{first_name}, one change for a stronger voice
-{first_name}, this is worth two minutes today
-{first_name}, I want you to try something
+Examples of exactly the right tone:
+{first_name}, try this sentence before your next meeting
+{first_name}, can you say this sentence with authority?
+{first_name}, your 2-minute voice challenge is ready
+{first_name}, people interrupting you? Try this today
+{first_name}, today's challenge: own the pause
+{first_name}, sound more confident in 60 seconds
+{first_name}, one pause that changes everything
+{first_name}, say this sentence differently today
+{first_name}, I want you to try something right now
 
-Return ONLY the subject line. No quotes, no explanation."""
+Return ONLY the subject line. No quotes, no punctuation changes, no explanation."""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1430,11 +1431,13 @@ Return ONLY the subject line. No quotes, no explanation."""
         first_name = user_context["name"].split()[0]
         import random
         fallbacks = [
-            f"{first_name}, I noticed something in your voice",
-            f"{first_name}, one change for a stronger voice",
-            f"{first_name}, your voice challenge is ready",
-            f"{first_name}, let's work on this today",
-            f"{first_name}, can you make this sentence land?",
+            f"{first_name}, try this sentence before your next meeting",
+            f"{first_name}, can you say this sentence with authority?",
+            f"{first_name}, your 2-minute voice challenge is ready",
+            f"{first_name}, today's challenge: own the pause",
+            f"{first_name}, one pause that changes everything",
+            f"{first_name}, sound more confident in 60 seconds",
+            f"{first_name}, say this sentence differently today",
         ]
         return random.choice(fallbacks)
 
@@ -1460,36 +1463,54 @@ def _generate_daily_content(user_context: dict, focus: str, session_memory: dict
         if session_memory.get("rina_observation"):
             memory_note += f" Rina noticed: {session_memory['rina_observation']}."
 
-        prompt = f"""You are Rina, a warm and intelligent AI voice coach sending a personal daily coaching email.
+        prompt = f"""You are Rina, a personal AI voice coach. You are sending a short daily coaching email that gives the user ONE practical speaking exercise — completable in 1-3 minutes.
 
-Today's training focus: {focus_label}
-User name: {user_context["name"]}
-User goal: {user_context["goal"]}
+Student name: {user_context["name"]}
+Student goal: {user_context["goal"]}
+Today's focus: {focus_label}
 {memory_note}
 {inactive_note}
 
-Generate a fresh, personal daily coaching email. Return ONLY valid JSON:
+The email must feel like a mini coaching session — not a newsletter.
+Follow the client's example format exactly:
+
+Example format:
+opening: "Try this with me."
+sentence: "There's one point I'd like you to remember."
+pause_version: "There's one point… I'd like you to remember."
+pause_insight: "That small pause tells your listener: this matters."
+listen_instruction: "Listen and notice the pause after the key word."
+shadow_instruction: "Say it along with me. Match the rhythm exactly."
+speak_instruction: "Now say it yourself — own it."
+closing: "Hear the difference? That's what one pause can do."
+sign_off: "See you tomorrow — we'll work on [next focus area]."
+
+Return ONLY valid JSON with these exact keys:
 {{
-  "opening": "2-3 sentences max. Natural, warm, personal. If there is session memory, reference something real naturally — like a real coach would. Never say 'I remember everything'. Say things like 'Last time we worked on...' Never invent progress.",
-  "sentence": "One powerful natural English sentence for a real situation. Must demonstrate today's focus: {focus_label}. Max 15 words.",
-  "listen_instruction": "One sentence. Tell them what to notice. Focus on {focus_label}.",
-  "shadow_instruction": "One sentence. How to shadow this sentence.",
-  "speak_instruction": "One sentence. Encourage them to make it theirs.",
-  "closing": "One warm short sentence. Real, not generic.",
-  "sign_off": "See you tomorrow — [something brief and specific about tomorrow based on coaching plan]."
+  "opening": "1-2 sentences max. Short. Direct. Like a coach starting a session. If there is real session memory, reference it naturally. Never vague.",
+  "sentence": "One powerful natural English sentence. Real professional situation. Shows today's focus: {focus_label}. Max 15 words.",
+  "pause_version": "Same sentence but with ... pause inserted at the key moment to show the difference.",
+  "pause_insight": "One sentence explaining what that pause/change does for the listener. Conversational, specific.",
+  "listen_instruction": "One sentence. What to notice when listening. Specific to {focus_label}.",
+  "shadow_instruction": "One sentence. How to shadow — speak along, match rhythm/pace/pause.",
+  "speak_instruction": "One sentence. Say it independently. Make it yours.",
+  "closing": "1-2 sentences. 'Hear the difference?' style. Specific coaching observation. NOT generic.",
+  "sign_off": "See you tomorrow — [what tomorrow's focus will be, brief and specific]."
 }}
 
 Rules:
-- Sound personal and human, not automated
-- Never use 'boundaries', 'journey', 'empower', 'transform'
-- Keep opening under 50 words
-- The sentence must be something a real professional would say naturally"""
+- Sound like a real coach, not a newsletter
+- Every field must be SHORT and SPECIFIC
+- Never use: 'journey', 'empower', 'transform', 'boundaries', 'believe in you'
+- The sentence must be something a professional actually says in real life
+- pause_version must show a real difference — not just add dots randomly
+- opening must be under 30 words"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.85,
-            max_tokens=500,
+            max_tokens=700,
         )
 
         raw = response.choices[0].message.content.strip()
@@ -1501,14 +1522,17 @@ Rules:
 
     except Exception as e:
         print(f"Daily content generation error: {e}")
+        first_name = user_context["name"].split()[0]
         return {
-            "opening": f"Hi {user_context['name'].split()[0]}, today we focus on {FOCUS_LABELS.get(focus, focus)}. One sentence. One practice.",
+            "opening": "Try this with me.",
             "sentence": "There is one point I would like you to remember.",
-            "listen_instruction": "Notice the calm pace and the intentional pause.",
-            "shadow_instruction": "Speak along with the model. Match the rhythm exactly.",
-            "speak_instruction": "Now say it yourself. Make the sentence yours.",
-            "closing": "Take this into one real conversation today.",
-            "sign_off": "See you tomorrow — we will build something new.",
+            "pause_version": "There is one point… I would like you to remember.",
+            "pause_insight": "That pause tells your listener: this matters.",
+            "listen_instruction": "Notice the pause. Notice what it does to the sentence.",
+            "shadow_instruction": "Say it along with me. Match the rhythm exactly.",
+            "speak_instruction": "Now say it yourself. Own it.",
+            "closing": "Hear the difference? That is what one pause can do.",
+            "sign_off": "See you tomorrow — we will work on something new.",
         }
 
 
@@ -1635,47 +1659,61 @@ def send_daily_coach_email(user: models.User, db: Session) -> bool:
 <body style="margin:0;padding:0;background:#F9F8F6;font-family:'Georgia',serif;">
 <div style="max-width:560px;margin:0 auto;padding:20px 16px;">
 
-  <div style="padding:40px 0 32px;text-align:left;">
-    <p style="font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 32px;font-family:'Inter',Arial,sans-serif;">VOICE CONTROL AI</p>
-    <p style="font-size:28px;color:#1A1A1B;line-height:1.4;margin:0 0 16px;font-weight:400;">Hi {first_name},</p>
-    <p style="font-size:17px;color:#4A4840;line-height:1.75;margin:0;font-weight:400;">{content_data.get("opening", "")}</p>
-  </div>
-
-  <div style="height:1px;background:#E8E4DC;margin:0 0 40px;"></div>
-
-  <p style="font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 20px;font-family:'Inter',Arial,sans-serif;">YOUR SENTENCE TO PRACTICE FOR TODAY</p>
-
-  <div style="padding:0 0 40px;">
-    <p style="font-size:26px;color:#1A1A1B;line-height:1.45;margin:0;font-weight:400;font-style:italic;">&ldquo;{sentence}&rdquo;</p>
-  </div>
-
-  <div style="height:1px;background:#E8E4DC;margin:0 0 40px;"></div>
-
-  <div style="margin-bottom:36px;">
-    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">🎧 LISTEN</p>
-    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0 0 16px;font-weight:400;">{content_data.get("listen_instruction", "")}</p>
-    <a href="{listen_url}" style="display:inline-block;border:1.5px solid #1A1A1B;color:#1A1A1B;padding:10px 24px;border-radius:30px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-decoration:none;font-family:'Inter',Arial,sans-serif;">LISTEN</a>
-  </div>
-
-  <div style="margin-bottom:36px;">
-    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">🗣️ SHADOW</p>
-    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0;font-weight:400;">{content_data.get("shadow_instruction", "")}</p>
-  </div>
-
-  <div style="margin-bottom:48px;">
-    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">🎙️ SPEAK</p>
-    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0;font-weight:400;">{content_data.get("speak_instruction", "")}</p>
-  </div>
-
-  <div style="margin-bottom:48px;">
-    <a href="{coach_url}" style="display:block;background:#1A1A1B;color:#FFFFFF;padding:18px 32px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:0.12em;text-decoration:none;text-align:center;font-family:'Inter',Arial,sans-serif;">PRACTISE WITH YOUR VOICE CONTROL AI COACH &rarr;</a>
+  <!-- HEADER -->
+  <div style="padding:40px 0 28px;text-align:left;">
+    <p style="font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 28px;font-family:'Inter',Arial,sans-serif;">VOICE CONTROL AI</p>
+    <p style="font-size:26px;color:#1A1A1B;line-height:1.4;margin:0 0 12px;font-weight:400;">Hi {first_name},</p>
+    <p style="font-size:17px;color:#4A4840;line-height:1.7;margin:0;font-weight:400;">{content_data.get("opening", "Try this with me.")}</p>
   </div>
 
   <div style="height:1px;background:#E8E4DC;margin:0 0 36px;"></div>
 
-  <div style="padding-bottom:48px;">
-    <p style="font-size:16px;color:#4A4840;line-height:1.7;margin:0 0 28px;font-weight:400;">{content_data.get("closing", "Take this into one real conversation today.")}</p>
-    <p style="font-size:15px;color:#9A9890;line-height:1.6;margin:0 0 6px;font-weight:400;">{content_data.get("sign_off", "See you tomorrow.")}</p>
+  <!-- SENTENCE TO PRACTICE -->
+  <p style="font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:#9A9890;font-weight:600;margin:0 0 16px;font-family:'Inter',Arial,sans-serif;">YOUR SENTENCE TO PRACTICE FOR TODAY</p>
+
+  <div style="margin-bottom:16px;">
+    <p style="font-size:24px;color:#1A1A1B;line-height:1.45;margin:0;font-weight:400;font-style:italic;">&ldquo;{sentence}&rdquo;</p>
+  </div>
+
+  <!-- PAUSE VERSION -->
+  <div style="background:#F5F3EF;border-left:3px solid #C9A84C;padding:16px 20px;margin-bottom:8px;border-radius:0 6px 6px 0;">
+    <p style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#9A7A40;font-weight:600;margin:0 0 8px;font-family:'Inter',Arial,sans-serif;">Now try it with a pause</p>
+    <p style="font-size:20px;color:#1A1A1B;line-height:1.5;margin:0;font-weight:400;font-style:italic;">&ldquo;{content_data.get("pause_version", sentence)}&rdquo;</p>
+  </div>
+  <p style="font-size:14px;color:#6A6860;line-height:1.65;margin:0 0 32px;font-weight:400;">{content_data.get("pause_insight", "")}</p>
+
+  <div style="height:1px;background:#E8E4DC;margin:0 0 32px;"></div>
+
+  <!-- LISTEN -->
+  <div style="margin-bottom:28px;">
+    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 6px;font-family:'Inter',Arial,sans-serif;">🎧 LISTEN</p>
+    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0 0 14px;font-weight:400;">{content_data.get("listen_instruction", "")}</p>
+    <a href="{listen_url}" style="display:inline-block;border:1.5px solid #1A1A1B;color:#1A1A1B;padding:9px 22px;border-radius:30px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-decoration:none;font-family:'Inter',Arial,sans-serif;">LISTEN</a>
+  </div>
+
+  <!-- SHADOW -->
+  <div style="margin-bottom:28px;">
+    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 6px;font-family:'Inter',Arial,sans-serif;">🗣️ SHADOW</p>
+    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0;font-weight:400;">{content_data.get("shadow_instruction", "")}</p>
+  </div>
+
+  <!-- SPEAK -->
+  <div style="margin-bottom:40px;">
+    <p style="font-size:13px;letter-spacing:0.1em;color:#1A1A1B;font-weight:700;margin:0 0 6px;font-family:'Inter',Arial,sans-serif;">🎙️ SPEAK</p>
+    <p style="font-size:15px;color:#6A6860;line-height:1.65;margin:0;font-weight:400;">{content_data.get("speak_instruction", "")}</p>
+  </div>
+
+  <!-- MAIN CTA -->
+  <div style="margin-bottom:40px;">
+    <a href="{coach_url}" style="display:block;background:#1A1A1B;color:#FFFFFF;padding:16px 32px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:0.12em;text-decoration:none;text-align:center;font-family:'Inter',Arial,sans-serif;">PRACTICE WITH RINA &rarr;</a>
+  </div>
+
+  <div style="height:1px;background:#E8E4DC;margin:0 0 32px;"></div>
+
+  <!-- CLOSING -->
+  <div style="padding-bottom:40px;">
+    <p style="font-size:16px;color:#1A1A1B;line-height:1.7;margin:0 0 20px;font-weight:400;">{content_data.get("closing", "Hear the difference? That is what one change can do.")}</p>
+    <p style="font-size:14px;color:#9A9890;line-height:1.6;margin:0 0 6px;font-weight:400;">{content_data.get("sign_off", "See you tomorrow.")}</p>
     <p style="font-size:15px;color:#1A1A1B;font-weight:600;margin:0;font-family:'Inter',Arial,sans-serif;">Rina</p>
     <p style="font-size:13px;color:#9A9890;margin:4px 0 0;font-family:'Inter',Arial,sans-serif;">Your Voice Control AI Coach</p>
   </div>
