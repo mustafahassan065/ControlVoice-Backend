@@ -1378,7 +1378,7 @@ def _get_session_memory(user_id: int, db: Session) -> dict:
     }
 
 
-def _generate_ai_subject(user_context: dict, session_memory: dict, focus: str) -> str:
+def _generate_ai_subject(user_context: dict, session_memory: dict, focus: str, sentence: str = "") -> str:
     """Generate AI subject line based on student memory — like Rina wrote it"""
     try:
         from openai import OpenAI
