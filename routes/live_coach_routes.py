@@ -116,9 +116,10 @@ Return ONLY valid JSON:
 
 
 
-TAVUS_API_KEY = os.getenv("TAVUS_API_KEY")
-TAVUS_REPLICA_ID = os.getenv("TAVUS_REPLICA_ID")
-TAVUS_API_URL = "https://tavusapi.com/v2/conversations"
+ANAM_API_KEY = os.getenv("ANAM_API_KEY")
+ANAM_PERSONA_ID = os.getenv("ANAM_PERSONA_ID")
+ANAM_SESSION_URL = "https://api.anam.ai/v1/sessions"
+ANAM_TOKEN_URL = "https://api.anam.ai/v1/auth/session-token"
 
 
 def build_user_context(user: models.User, db: Session) -> str:
@@ -312,57 +313,60 @@ async def start_live_coach_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    if not TAVUS_API_KEY:
-        raise HTTPException(status_code=500, detail="Tavus API key not configured")
-    if not TAVUS_REPLICA_ID:
-        raise HTTPException(status_code=500, detail="Tavus Replica ID not configured")
+    if not ANAM_API_KEY:
+        raise HTTPException(status_code=500, detail="Anam API key not configured")
+    if not ANAM_PERSONA_ID:
+        raise HTTPException(status_code=500, detail="Anam Persona ID not configured")
 
-    # Build full user context
+    # Build full user context for Rina
     conversation_context = build_user_context(current_user, db)
+    first_name = current_user.name.strip().split()[0] if current_user.name else "there"
+    authority = _get_authority(current_user, db)
 
-    # Start Tavus conversation
+    greeting = (
+        f"Hi {first_name}! I am Rina, your personal AI Voice Coach. "
+        f"I have reviewed your voice data. Your Authority Score is {authority}. "
+        f"Let us work on your biggest opportunity today. What would you like to focus on?"
+    )
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                TAVUS_API_URL,
+
+            # Step 1: Get session token from Anam
+            token_response = await client.post(
+                ANAM_TOKEN_URL,
                 headers={
-                    "x-api-key": TAVUS_API_KEY,
+                    "Authorization": f"Bearer {ANAM_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "replica_id": TAVUS_REPLICA_ID,
-                    "conversational_context": conversation_context,
-                    "custom_greeting": f"Hi {current_user.name.split()[0]}! Welcome to your Voice Control AI. I've reviewed your voice data and I'm ready to help you improve. Your Authority Score is {_get_authority(current_user, db)}. Let's work on your biggest opportunity today.",
-                    "properties": {
-                        "max_call_duration": 1800,  # 30 minutes max
-                        "participant_left_timeout": 60,
-                        "enable_recording": False,
-                        
+                    "personaId": ANAM_PERSONA_ID,
+                    "conversationConfig": {
+                        "systemPrompt": conversation_context,
+                        "welcomeMessage": greeting,
                     }
                 }
             )
 
-        if response.status_code not in [200, 201]:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Tavus error: {response.text}"
-            )
+            if token_response.status_code not in [200, 201]:
+                raise HTTPException(
+                    status_code=token_response.status_code,
+                    detail=f"Anam auth error: {token_response.text}"
+                )
 
-        data = response.json()
-        conversation_url = data.get("conversation_url")
+            token_data = token_response.json()
+            session_token = token_data.get("sessionToken") or token_data.get("token") or token_data.get("data", {}).get("sessionToken")
 
-        if not conversation_url:
-            raise HTTPException(status_code=500, detail="No conversation URL returned from Tavus")
-
-        conversation_id = data.get("conversation_id", "")
+            if not session_token:
+                raise HTTPException(status_code=500, detail=f"No session token from Anam: {token_data}")
 
         return {
-            "conversation_url": conversation_url,
-            "conversation_id": conversation_id,
+            "session_token": session_token,
+            "persona_id": ANAM_PERSONA_ID,
         }
 
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Tavus connection timed out. Please try again.")
+        raise HTTPException(status_code=504, detail="Anam connection timed out. Please try again.")
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Connection error: {str(e)}")
 
