@@ -341,9 +341,11 @@ async def start_live_coach_session(
                 },
                 json={
                     "personaId": ANAM_PERSONA_ID,
-                    "personaConfig": {
-                        "systemPrompt": conversation_context,
-                        "welcomeMessage": greeting,
+                    "overrides": {
+                        "persona": {
+                            "systemPrompt": conversation_context,
+                            "welcomeMessage": greeting,
+                        }
                     }
                 }
             )
