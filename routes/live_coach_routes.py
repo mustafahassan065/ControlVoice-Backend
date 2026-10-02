@@ -340,12 +340,14 @@ async def start_live_coach_session(
                     "Content-Type": "application/json",
                 },
                 json={
-                    "personaId": ANAM_PERSONA_ID,
-                    "overrides": {
-                        "persona": {
-                            "systemPrompt": conversation_context,
-                            "welcomeMessage": greeting,
-                        }
+                    "personaConfig": {
+                        "name": f"Rina for {first_name}",
+                        "avatarId": "3a929bff-7d2d-49b3-a232-d7956138d72b",
+                        "avatarModel": "cara-4",
+                        "voiceId": "c48c4dd9-5050-11f1-9076-5e955d484d11",
+                        "llmId": "a7cf662c-2ace-4de1-a21e-ef0fbf144bb7",
+                        "systemPrompt": conversation_context,
+                        "welcomeMessage": greeting,
                     }
                 }
             )
