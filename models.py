@@ -9,9 +9,11 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True)  # nullable for Google OAuth users
+    google_id = Column(String, nullable=True, unique=True, index=True)  # Google OAuth
+    avatar_url = Column(String, nullable=True)  # Google profile picture
     plan = Column(String, default="free")
-    onboarding_completed = Column(Integer, default=0)  # 0 = not done, 1 = done
+    onboarding_completed = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     recordings = relationship("Recording", back_populates="user")
@@ -25,8 +27,8 @@ class Recording(Base):
     transcript = Column(Text, nullable=True)
     acoustic_data = Column(Text, nullable=True)
     duration = Column(Float, nullable=True)
-    session_type = Column(String, nullable=True)   # morning, afternoon, evening, baseline
-    attempt_number = Column(Integer, default=1)     # 1 or 2 (retry)
+    session_type = Column(String, nullable=True)
+    attempt_number = Column(Integer, default=1)
     parent_recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -210,9 +212,9 @@ class UserProfile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    goals = Column(Text, nullable=True)              # JSON array of selected goals
-    difficult_situations = Column(Text, nullable=True)  # JSON array
-    sessions_per_day = Column(Integer, default=2)    # 1, 2, or 3
+    goals = Column(Text, nullable=True)
+    difficult_situations = Column(Text, nullable=True)
+    sessions_per_day = Column(Integer, default=2)
     experience_level = Column(String, default="beginner")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -223,7 +225,7 @@ class BaselineAssessment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    task_type = Column(String, nullable=False)  # read_aloud, free_speaking, impromptu, pressure
+    task_type = Column(String, nullable=False)
     recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
     score = Column(Float, nullable=True)
     completed = Column(Integer, default=0)
@@ -236,11 +238,11 @@ class TrainingSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_type = Column(String, nullable=False)   # morning, afternoon, evening
-    session_date = Column(String, nullable=False)   # YYYY-MM-DD
+    session_type = Column(String, nullable=False)
+    session_date = Column(String, nullable=False)
     exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=True)
-    recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)        # attempt 1
-    retry_recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)  # attempt 2
+    recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
+    retry_recording_id = Column(Integer, ForeignKey("recordings.id"), nullable=True)
     score_attempt1 = Column(Float, nullable=True)
     score_attempt2 = Column(Float, nullable=True)
     improvement = Column(Float, nullable=True)
@@ -254,16 +256,13 @@ class StudentMemory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    # Long-term coaching notes — key facts about the student
-    coaching_notes = Column(Text, nullable=True)        # JSON array of short facts
-    # Current coaching plan
-    current_program = Column(String, nullable=True)     # e.g. "Executive Presence"
+    coaching_notes = Column(Text, nullable=True)
+    current_program = Column(String, nullable=True)
     current_week = Column(Integer, default=1)
-    current_focus = Column(String, nullable=True)       # e.g. "Deliberate Pausing"
+    current_focus = Column(String, nullable=True)
     next_focus = Column(String, nullable=True)
     strongest_improvement = Column(String, nullable=True)
-    rina_observation = Column(Text, nullable=True)      # e.g. "Sounds strongest when slows first sentence"
-    # Voice baseline
+    rina_observation = Column(Text, nullable=True)
     baseline_pace = Column(Float, nullable=True)
     baseline_authority = Column(Float, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -274,16 +273,16 @@ class SessionSummary(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_date = Column(String, nullable=False)       # YYYY-MM-DD
+    session_date = Column(String, nullable=False)
     goal = Column(String, nullable=True)
-    focus = Column(String, nullable=True)               # what was practiced
-    problem = Column(Text, nullable=True)               # what struggled
-    exercise = Column(String, nullable=True)            # exercise used
+    focus = Column(String, nullable=True)
+    problem = Column(Text, nullable=True)
+    exercise = Column(String, nullable=True)
     before_authority = Column(Float, nullable=True)
     after_authority = Column(Float, nullable=True)
-    improvement = Column(String, nullable=True)         # Strong / Moderate / None
-    next_session = Column(Text, nullable=True)          # recommended next focus
-    raw_summary = Column(Text, nullable=True)           # full JSON
+    improvement = Column(String, nullable=True)
+    next_session = Column(Text, nullable=True)
+    raw_summary = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -292,13 +291,13 @@ class CoachingPlan(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    program_name = Column(String, nullable=True)        # e.g. "Executive Presence"
+    program_name = Column(String, nullable=True)
     week_1_focus = Column(String, nullable=True)
     week_2_focus = Column(String, nullable=True)
     week_3_focus = Column(String, nullable=True)
     week_4_focus = Column(String, nullable=True)
     current_week = Column(Integer, default=1)
-    current_session = Column(Integer, default=1)        # session within week
+    current_session = Column(Integer, default=1)
     current_milestone = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
