@@ -115,7 +115,10 @@ def save_profile(
         )
         db.add(profile)
 
+    # Mark onboarding complete immediately after goals saved
+    current_user.onboarding_completed = 1
     db.commit()
+
     return {"message": "Profile saved"}
 
 
@@ -175,23 +178,10 @@ def complete_baseline_task(
 
     db.commit()
 
-    # Award XP
     from routes.challenge_routes import award_xp
     award_xp(current_user.id, 25, db)
 
-    # Check if all 4 done — mark onboarding complete
-    completed_count = db.query(models.BaselineAssessment).filter(
-        models.BaselineAssessment.user_id == current_user.id,
-        models.BaselineAssessment.completed == 1,
-    ).count()
-
-    if completed_count >= 4:
-        user = db.query(models.User).filter(models.User.id == current_user.id).first()
-        user.onboarding_completed = 1
-        db.commit()
-        return {"message": "Task complete", "onboarding_complete": True}
-
-    return {"message": "Task complete", "onboarding_complete": False}
+    return {"message": "Task complete", "onboarding_complete": True}
 
 
 @router.get("/status")
