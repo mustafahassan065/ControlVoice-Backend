@@ -5,7 +5,7 @@ import models
 
 PLAN_LIMITS = {
     "free": {
-        "max_analyses": 1,
+        "max_analyses": 3,
         "daily_exercises": False,
         "progress_tracking": False,
         "weekly_reports": False,
@@ -32,7 +32,7 @@ PLAN_LIMITS = {
 
 
 def check_analysis_limit(user: models.User, db: Session):
-    """Free user sirf 1 analysis kar sakta hai"""
+    """Free user 3 analyses kar sakta hai"""
     plan = user.plan or "free"
     limit = PLAN_LIMITS[plan]["max_analyses"]
 
@@ -48,7 +48,7 @@ def check_analysis_limit(user: models.User, db: Session):
             status_code=403,
             detail={
                 "error":   "plan_limit_reached",
-                "message": f"Free plan allows {limit} voice analysis. Upgrade to Pro for unlimited analyses.",
+                "message": f"Free plan allows {limit} voice analyses. Upgrade to Pro for unlimited analyses.",
                 "upgrade_url": "/pricing",
             }
         )
