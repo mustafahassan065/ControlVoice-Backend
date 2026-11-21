@@ -204,7 +204,7 @@ IMPORTANT RULES:
     # Call OpenAI
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=api_messages,
             max_tokens=400,
             temperature=0.7,
